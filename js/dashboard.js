@@ -1,7 +1,35 @@
 /**
  * MUSIC BUSINESS TRACKER - DASHBOARD MODULE
  * KPI Cards, Charts, Performance Overview, Alerts
+ * FIXED: Chart.js loading issues
  */
+
+/**
+ * Wait for Chart.js to be loaded
+ */
+async function waitForChart() {
+    return new Promise((resolve) => {
+        if (typeof Chart !== 'undefined') {
+            resolve();
+            return;
+        }
+
+        // Check every 100ms if Chart is loaded
+        const checkChart = setInterval(() => {
+            if (typeof Chart !== 'undefined') {
+                clearInterval(checkChart);
+                resolve();
+            }
+        }, 100);
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+            clearInterval(checkChart);
+            console.error('⚠️ Chart.js failed to load within 10 seconds');
+            resolve(); // Resolve anyway to avoid blocking
+        }, 10000);
+    });
+}
 
 class DashboardModule {
     constructor() {
@@ -384,12 +412,18 @@ class DashboardModule {
     }
 
     /**
-     * Update revenue trend chart
+     * Update revenue trend chart - FIXED VERSION
      */
     async updateRevenueChart() {
         try {
+            // Wait for Chart.js to be available
+            await waitForChart();
+
             const canvas = document.getElementById('revenueChart');
-            if (!canvas) return;
+            if (!canvas || typeof Chart === 'undefined') {
+                console.warn('⚠️ Chart.js not available or canvas not found');
+                return;
+            }
 
             // Get revenue data for last 6 months
             const endDate = new Date();
@@ -475,18 +509,25 @@ class DashboardModule {
                 }
             });
 
+            console.log('✅ Revenue chart updated successfully');
         } catch (error) {
             console.error('❌ Error updating revenue chart:', error);
         }
     }
 
     /**
-     * Update platform distribution chart
+     * Update platform distribution chart - FIXED VERSION
      */
     async updatePlatformChart() {
         try {
+            // Wait for Chart.js to be available
+            await waitForChart();
+
             const canvas = document.getElementById('platformChart');
-            if (!canvas) return;
+            if (!canvas || typeof Chart === 'undefined') {
+                console.warn('⚠️ Chart.js not available or canvas not found');
+                return;
+            }
 
             // Get all revenue data
             const revenueData = await window.musicDB.getAllRevenue();
@@ -540,6 +581,7 @@ class DashboardModule {
             // Update legend
             this.updatePlatformLegend(platformData, colors);
 
+            console.log('✅ Platform chart updated successfully');
         } catch (error) {
             console.error('❌ Error updating platform chart:', error);
         }
