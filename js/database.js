@@ -1,722 +1,530 @@
 /**
- * MUSIC BUSINESS TRACKER - DATABASE SYSTEM
- * LocalStorage + IndexedDB Management
- * Complete CRUD operations for all entities
+ * MUSIC BUSINESS TRACKER - DATABASE MANAGER
+ * LocalStorage + IndexedDB management for data persistence
  */
 
-class MusicBusinessDatabase {
+class DatabaseManager {
     constructor() {
         this.dbName = 'MusicBusinessTracker';
         this.dbVersion = 1;
         this.db = null;
 
-        // Storage keys for localStorage
-        this.storageKeys = {
-            settings: 'mbt_settings',
-            quickStats: 'mbt_quick_stats',
-            lastBackup: 'mbt_last_backup',
-            userPreferences: 'mbt_user_preferences'
+        // Data schemas
+        this.schemas = {
+            revenue: {
+                id: 'string',
+                date: 'string',
+                platform: 'string',
+                amount: 'number',
+                videoId: 'string',
+                currency: 'string',
+                notes: 'string',
+                category: 'string',
+                tags: 'array',
+                createdAt: 'string',
+                updatedAt: 'string'
+            },
+            videos: {
+                id: 'string',
+                title: 'string',
+                publishDate: 'string',
+                duration: 'number',
+                views: 'number',
+                likes: 'number',
+                comments: 'number',
+                shares: 'number',
+                revenue: 'number',
+                ctr: 'number',
+                retention: 'number',
+                thumbnailUrl: 'string',
+                description: 'string',
+                tags: 'array',
+                category: 'string',
+                platform: 'string',
+                url: 'string',
+                status: 'string',
+                createdAt: 'string',
+                updatedAt: 'string'
+            },
+            streaming: {
+                id: 'string',
+                trackId: 'string',
+                platform: 'string',
+                date: 'string',
+                streams: 'number',
+                listeners: 'number',
+                revenue: 'number',
+                country: 'string',
+                playlistAdds: 'number',
+                saves: 'number',
+                skips: 'number',
+                completionRate: 'number',
+                createdAt: 'string',
+                updatedAt: 'string'
+            },
+            settings: {
+                key: 'string',
+                value: 'any',
+                type: 'string',
+                category: 'string',
+                updatedAt: 'string'
+            },
+            backups: {
+                id: 'string',
+                timestamp: 'string',
+                data: 'object',
+                size: 'number',
+                type: 'string'
+            }
         };
 
-        // Initialize database
         this.init();
     }
 
     /**
-     * Initialize database and create default data structure
+     * Initialize database
      */
     async init() {
         try {
-            // Initialize IndexedDB
             await this.initIndexedDB();
-
-            // Initialize localStorage with default settings
-            this.initLocalStorage();
-
-            // Create default data if first run
-            await this.createDefaultData();
-
+            await this.runMigrations();
             console.log('✅ Database initialized successfully');
         } catch (error) {
             console.error('❌ Database initialization failed:', error);
-            this.showToast('Errore inizializzazione database', 'error');
+            // Fallback to localStorage only
+            console.log('📦 Using localStorage fallback');
         }
     }
 
     /**
-     * Initialize IndexedDB for large datasets
+     * Initialize IndexedDB
      */
     initIndexedDB() {
         return new Promise((resolve, reject) => {
+            if (!window.indexedDB) {
+                reject(new Error('IndexedDB not supported'));
+                return;
+            }
+
             const request = indexedDB.open(this.dbName, this.dbVersion);
 
-            request.onerror = () => {
-                reject(new Error('Errore apertura IndexedDB'));
-            };
-
-            request.onsuccess = (event) => {
-                this.db = event.target.result;
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+                this.db = request.result;
                 resolve();
             };
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
 
-                // Revenue store
-                if (!db.objectStoreNames.contains('revenue')) {
-                    const revenueStore = db.createObjectStore('revenue', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    revenueStore.createIndex('date', 'date', { unique: false });
-                    revenueStore.createIndex('platform', 'platform', { unique: false });
-                    revenueStore.createIndex('videoId', 'videoId', { unique: false });
-                }
+                // Create object stores
+                Object.keys(this.schemas).forEach(storeName => {
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        const store = db.createObjectStore(storeName, { keyPath: 'id' });
 
-                // Videos store
-                if (!db.objectStoreNames.contains('videos')) {
-                    const videosStore = db.createObjectStore('videos', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    videosStore.createIndex('publishDate', 'publishDate', { unique: false });
-                    videosStore.createIndex('niche', 'niche', { unique: false });
-                    videosStore.createIndex('performance', 'views', { unique: false });
-                }
+                        // Create indexes based on schema
+                        const schema = this.schemas[storeName];
+                        Object.keys(schema).forEach(field => {
+                            if (field !== 'id' && ['string', 'number'].includes(schema[field])) {
+                                try {
+                                    store.createIndex(field, field, { unique: false });
+                                } catch (e) {
+                                    // Index might already exist
+                                }
+                            }
+                        });
 
-                // Analytics store
-                if (!db.objectStoreNames.contains('analytics')) {
-                    const analyticsStore = db.createObjectStore('analytics', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    analyticsStore.createIndex('date', 'date', { unique: false });
-                    analyticsStore.createIndex('type', 'type', { unique: false });
-                }
-
-                // Calendar events store
-                if (!db.objectStoreNames.contains('calendar')) {
-                    const calendarStore = db.createObjectStore('calendar', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    calendarStore.createIndex('date', 'date', { unique: false });
-                    calendarStore.createIndex('type', 'type', { unique: false });
-                }
-
-                // Backups store
-                if (!db.objectStoreNames.contains('backups')) {
-                    const backupsStore = db.createObjectStore('backups', {
-                        keyPath: 'id',
-                        autoIncrement: true
-                    });
-                    backupsStore.createIndex('timestamp', 'timestamp', { unique: false });
-                }
+                        // Common indexes
+                        if (schema.date) {
+                            store.createIndex('date', 'date', { unique: false });
+                        }
+                        if (schema.createdAt) {
+                            store.createIndex('createdAt', 'createdAt', { unique: false });
+                        }
+                    }
+                });
             };
         });
     }
 
     /**
-     * Initialize localStorage with default settings
+     * Run database migrations
      */
-    initLocalStorage() {
+    async runMigrations() {
+        const currentVersion = await this.getSetting('dbVersion', 0);
+
+        if (currentVersion < 1) {
+            // Migration 1: Initial setup
+            await this.migrationV1();
+            await this.setSetting('dbVersion', 1);
+        }
+
+        // Future migrations can be added here
+    }
+
+    /**
+     * Migration V1: Initial data setup
+     */
+    async migrationV1() {
+        console.log('🔄 Running migration V1...');
+
+        // Set default settings
         const defaultSettings = {
-            version: '1.0.0',
-            theme: 'dark',
-            currency: 'EUR',
-            language: 'it',
-            fiscalYear: 'calendar',
+            currency: '€',
             pivaThreshold: 5000,
-            targets: {
-                monthly: 165,
-                quarterly: 500,
-                annual: 2000
-            },
-            notifications: {
-                milestones: true,
-                pivaWarnings: true,
-                performanceDrops: true,
-                weeklyReports: true
-            },
-            analytics: {
-                defaultPeriod: 'last30days',
-                chartTypes: ['line', 'bar'],
-                autoRefresh: 'daily'
-            },
-            platforms: {
-                youtube: { enabled: true, color: '#ff0000' },
-                spotify: { enabled: true, color: '#1db954' },
-                appleMusic: { enabled: true, color: '#fa57c1' },
-                amazonMusic: { enabled: true, color: '#ff9900' },
-                youtubeMusic: { enabled: true, color: '#ff0000' },
-                other: { enabled: true, color: '#888888' }
-            }
+            monthlyTarget: 165,
+            quarterlyTarget: 500,
+            annualTarget: 2000,
+            theme: 'dark',
+            language: 'it',
+            dateFormat: 'DD/MM/YYYY',
+            backupFrequency: 'weekly',
+            notifications: true,
+            autoSave: true
         };
 
-        // Initialize settings if not exists
-        if (!localStorage.getItem(this.storageKeys.settings)) {
-            localStorage.setItem(this.storageKeys.settings, JSON.stringify(defaultSettings));
+        for (const [key, value] of Object.entries(defaultSettings)) {
+            await this.setSetting(key, value, 'general');
         }
 
-        // Initialize user preferences
-        const defaultPreferences = {
-            sidebarCollapsed: false,
-            dashboardLayout: 'default',
-            defaultPage: 'dashboard',
-            quickActions: ['addRevenue', 'addVideo', 'exportData']
-        };
-
-        if (!localStorage.getItem(this.storageKeys.userPreferences)) {
-            localStorage.setItem(this.storageKeys.userPreferences, JSON.stringify(defaultPreferences));
-        }
+        console.log('✅ Migration V1 completed');
     }
 
     /**
-     * Create default sample data for first-time users
+     * Create new record
      */
-    async createDefaultData() {
+    async create(storeName, data) {
         try {
-            // Check if data already exists
-            const existingRevenue = await this.getAllRevenue();
-            if (existingRevenue.length > 0) {
-                return; // Data already exists
+            // Validate schema
+            this.validateSchema(storeName, data);
+
+            // Generate ID if not provided
+            if (!data.id) {
+                data.id = this.generateId();
             }
 
-            // Create sample revenue data
-            const sampleRevenue = [
-                {
-                    date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                    platform: 'YouTube AdSense',
-                    amount: 15.50,
-                    videoId: null,
-                    description: 'Revenue settimanale YouTube',
-                    notes: 'Prima entrata di esempio'
-                },
-                {
-                    date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                    platform: 'Spotify',
-                    amount: 8.20,
-                    videoId: null,
-                    description: 'Streaming royalties Spotify',
-                    notes: 'Crescita stream mensili'
-                }
-            ];
+            // Add timestamps
+            const now = new Date().toISOString();
+            data.createdAt = now;
+            data.updatedAt = now;
 
-            for (const revenue of sampleRevenue) {
-                await this.addRevenue(revenue);
+            // Save to IndexedDB
+            if (this.db) {
+                await this.saveToIndexedDB(storeName, data);
             }
 
-            // Create sample video data
-            const sampleVideos = [
-                {
-                    title: 'Deep Focus Study Music • 2 Hours',
-                    publishDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-                    duration: 120,
-                    niche: 'Study/Focus',
-                    youtubeUrl: '',
-                    views: 1250,
-                    likes: 85,
-                    comments: 12,
-                    ctr: 3.8,
-                    retention: 65,
-                    revenue: 12.50,
-                    keywords: ['study music', 'focus music', 'concentration'],
-                    thumbnail: '',
-                    description: 'Musica per studiare e concentrarsi',
-                    status: 'published'
-                }
-            ];
+            // Save to localStorage as backup
+            await this.saveToLocalStorage(storeName, data);
 
-            for (const video of sampleVideos) {
-                await this.addVideo(video);
-            }
-
-            console.log('✅ Sample data created successfully');
-        } catch (error) {
-            console.error('❌ Error creating sample data:', error);
-        }
-    }
-
-    // ===== REVENUE OPERATIONS =====
-
-    /**
-     * Add new revenue entry
-     */
-    async addRevenue(revenueData) {
-        try {
-            const revenue = {
-                ...revenueData,
-                id: Date.now() + Math.random(),
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-
-            // Validate revenue data
-            this.validateRevenueData(revenue);
-
-            // Add to IndexedDB
-            await this.addToStore('revenue', revenue);
-
-            // Update quick stats in localStorage
-            await this.updateQuickStats();
-
-            console.log('✅ Revenue added:', revenue);
-            return revenue;
-        } catch (error) {
-            console.error('❌ Error adding revenue:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get all revenue entries
-     */
-    async getAllRevenue() {
-        try {
-            return await this.getAllFromStore('revenue');
-        } catch (error) {
-            console.error('❌ Error getting revenue:', error);
-            return [];
-        }
-    }
-
-    /**
-     * Get revenue by date range
-     */
-    async getRevenueByDateRange(startDate, endDate) {
-        try {
-            const allRevenue = await this.getAllRevenue();
-            return allRevenue.filter(revenue => {
-                const revenueDate = new Date(revenue.date);
-                return revenueDate >= new Date(startDate) && revenueDate <= new Date(endDate);
-            });
-        } catch (error) {
-            console.error('❌ Error getting revenue by date range:', error);
-            return [];
-        }
-    }
-
-    /**
-     * Update revenue entry
-     */
-    async updateRevenue(id, updateData) {
-        try {
-            const existingRevenue = await this.getFromStore('revenue', id);
-            if (!existingRevenue) {
-                throw new Error('Revenue not found');
-            }
-
-            const updatedRevenue = {
-                ...existingRevenue,
-                ...updateData,
-                updatedAt: new Date().toISOString()
-            };
-
-            this.validateRevenueData(updatedRevenue);
-            await this.updateInStore('revenue', updatedRevenue);
-            await this.updateQuickStats();
-
-            return updatedRevenue;
-        } catch (error) {
-            console.error('❌ Error updating revenue:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Delete revenue entry
-     */
-    async deleteRevenue(id) {
-        try {
-            await this.deleteFromStore('revenue', id);
-            await this.updateQuickStats();
-            console.log('✅ Revenue deleted:', id);
-        } catch (error) {
-            console.error('❌ Error deleting revenue:', error);
-            throw error;
-        }
-    }
-
-    // ===== VIDEO OPERATIONS =====
-
-    /**
-     * Add new video entry
-     */
-    async addVideo(videoData) {
-        try {
-            const video = {
-                ...videoData,
-                id: Date.now() + Math.random(),
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString()
-            };
-
-            this.validateVideoData(video);
-            await this.addToStore('videos', video);
-
-            console.log('✅ Video added:', video);
-            return video;
-        } catch (error) {
-            console.error('❌ Error adding video:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get all videos
-     */
-    async getAllVideos() {
-        try {
-            return await this.getAllFromStore('videos');
-        } catch (error) {
-            console.error('❌ Error getting videos:', error);
-            return [];
-        }
-    }
-
-    /**
-     * Update video entry
-     */
-    async updateVideo(id, updateData) {
-        try {
-            const existingVideo = await this.getFromStore('videos', id);
-            if (!existingVideo) {
-                throw new Error('Video not found');
-            }
-
-            const updatedVideo = {
-                ...existingVideo,
-                ...updateData,
-                updatedAt: new Date().toISOString()
-            };
-
-            this.validateVideoData(updatedVideo);
-            await this.updateInStore('videos', updatedVideo);
-
-            return updatedVideo;
-        } catch (error) {
-            console.error('❌ Error updating video:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Delete video entry
-     */
-    async deleteVideo(id) {
-        try {
-            await this.deleteFromStore('videos', id);
-            console.log('✅ Video deleted:', id);
-        } catch (error) {
-            console.error('❌ Error deleting video:', error);
-            throw error;
-        }
-    }
-
-    // ===== SETTINGS OPERATIONS =====
-
-    /**
-     * Get user settings
-     */
-    getSettings() {
-        try {
-            const settings = localStorage.getItem(this.storageKeys.settings);
-            return settings ? JSON.parse(settings) : null;
-        } catch (error) {
-            console.error('❌ Error getting settings:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Update user settings
-     */
-    updateSettings(newSettings) {
-        try {
-            const currentSettings = this.getSettings() || {};
-            const updatedSettings = { ...currentSettings, ...newSettings };
-            localStorage.setItem(this.storageKeys.settings, JSON.stringify(updatedSettings));
-            console.log('✅ Settings updated');
-            return updatedSettings;
-        } catch (error) {
-            console.error('❌ Error updating settings:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get user preferences
-     */
-    getUserPreferences() {
-        try {
-            const prefs = localStorage.getItem(this.storageKeys.userPreferences);
-            return prefs ? JSON.parse(prefs) : null;
-        } catch (error) {
-            console.error('❌ Error getting user preferences:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Update user preferences
-     */
-    updateUserPreferences(newPrefs) {
-        try {
-            const currentPrefs = this.getUserPreferences() || {};
-            const updatedPrefs = { ...currentPrefs, ...newPrefs };
-            localStorage.setItem(this.storageKeys.userPreferences, JSON.stringify(updatedPrefs));
-            console.log('✅ User preferences updated');
-            return updatedPrefs;
-        } catch (error) {
-            console.error('❌ Error updating user preferences:', error);
-            throw error;
-        }
-    }
-
-    // ===== ANALYTICS & CALCULATIONS =====
-
-    /**
-     * Calculate and update quick stats for dashboard
-     */
-    async updateQuickStats() {
-        try {
-            const now = new Date();
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const startOfYear = new Date(now.getFullYear(), 0, 1);
-
-            // Get revenue data
-            const monthlyRevenue = await this.getRevenueByDateRange(
-                startOfMonth.toISOString().split('T')[0],
-                now.toISOString().split('T')[0]
-            );
-
-            const yearlyRevenue = await this.getRevenueByDateRange(
-                startOfYear.toISOString().split('T')[0],
-                now.toISOString().split('T')[0]
-            );
-
-            // Calculate totals
-            const monthlyTotal = monthlyRevenue.reduce((sum, r) => sum + r.amount, 0);
-            const yearlyTotal = yearlyRevenue.reduce((sum, r) => sum + r.amount, 0);
-
-            // Get videos data
-            const allVideos = await this.getAllVideos();
-            const monthlyVideos = allVideos.filter(v => {
-                const videoDate = new Date(v.publishDate);
-                return videoDate >= startOfMonth;
-            });
-
-            // Calculate video stats
-            const totalViews = allVideos.reduce((sum, v) => sum + (v.views || 0), 0);
-            const avgCTR = allVideos.length > 0 ?
-                allVideos.reduce((sum, v) => sum + (v.ctr || 0), 0) / allVideos.length : 0;
-
-            // Get settings for targets
-            const settings = this.getSettings();
-            const monthlyTarget = settings?.targets?.monthly || 165;
-            const yearlyTarget = settings?.targets?.annual || 2000;
-            const pivaThreshold = settings?.pivaThreshold || 5000;
-
-            const quickStats = {
-                monthly: {
-                    revenue: monthlyTotal,
-                    target: monthlyTarget,
-                    progress: (monthlyTotal / monthlyTarget) * 100,
-                    videosPublished: monthlyVideos.length
-                },
-                yearly: {
-                    revenue: yearlyTotal,
-                    target: yearlyTarget,
-                    progress: (yearlyTotal / yearlyTarget) * 100,
-                    pivaProgress: (yearlyTotal / pivaThreshold) * 100,
-                    videosPublished: allVideos.length
-                },
-                performance: {
-                    totalViews,
-                    avgCTR: Math.round(avgCTR * 100) / 100,
-                    totalVideos: allVideos.length,
-                    avgRevenuePerVideo: allVideos.length > 0 ?
-                        (yearlyTotal / allVideos.length) : 0
-                },
-                lastUpdated: new Date().toISOString()
-            };
-
-            localStorage.setItem(this.storageKeys.quickStats, JSON.stringify(quickStats));
-            return quickStats;
-        } catch (error) {
-            console.error('❌ Error updating quick stats:', error);
-            return null;
-        }
-    }
-
-    /**
-     * Get quick stats for dashboard
-     */
-    getQuickStats() {
-        try {
-            const stats = localStorage.getItem(this.storageKeys.quickStats);
-            return stats ? JSON.parse(stats) : null;
-        } catch (error) {
-            console.error('❌ Error getting quick stats:', error);
-            return null;
-        }
-    }
-
-    // ===== BACKUP & EXPORT =====
-
-    /**
-     * Create full backup of all data
-     */
-    async createBackup() {
-        try {
-            const backup = {
-                version: '1.0.0',
-                timestamp: new Date().toISOString(),
-                data: {
-                    revenue: await this.getAllRevenue(),
-                    videos: await this.getAllVideos(),
-                    settings: this.getSettings(),
-                    preferences: this.getUserPreferences(),
-                    quickStats: this.getQuickStats()
-                }
-            };
-
-            // Save backup to IndexedDB
-            await this.addToStore('backups', backup);
-
-            // Update last backup timestamp
-            localStorage.setItem(this.storageKeys.lastBackup, new Date().toISOString());
-
-            console.log('✅ Backup created successfully');
-            return backup;
-        } catch (error) {
-            console.error('❌ Error creating backup:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Export data as JSON for external use
-     */
-    async exportData(format = 'json') {
-        try {
-            const data = await this.createBackup();
-
-            if (format === 'json') {
-                return JSON.stringify(data, null, 2);
-            } else if (format === 'csv') {
-                return this.convertToCSV(data.data);
-            }
-
+            console.log(`✅ Created ${storeName} record:`, data.id);
             return data;
+
         } catch (error) {
-            console.error('❌ Error exporting data:', error);
+            console.error(`❌ Failed to create ${storeName} record:`, error);
             throw error;
         }
     }
 
     /**
-     * Import data from backup
+     * Read record by ID
      */
-    async importData(backupData) {
+    async read(storeName, id) {
         try {
-            // Validate backup data structure
-            if (!backupData.data || !backupData.version) {
-                throw new Error('Invalid backup format');
+            // Try IndexedDB first
+            if (this.db) {
+                const data = await this.readFromIndexedDB(storeName, id);
+                if (data) return data;
             }
 
-            // Clear existing data (with confirmation)
-            const confirm = window.confirm(
-                'Importare i dati cancellerà tutti i dati esistenti. Continuare?'
-            );
-            if (!confirm) return false;
+            // Fallback to localStorage
+            return await this.readFromLocalStorage(storeName, id);
 
-            // Clear stores
-            await this.clearStore('revenue');
-            await this.clearStore('videos');
+        } catch (error) {
+            console.error(`❌ Failed to read ${storeName} record ${id}:`, error);
+            return null;
+        }
+    }
 
-            // Import revenue data
-            if (backupData.data.revenue) {
-                for (const revenue of backupData.data.revenue) {
-                    await this.addToStore('revenue', revenue);
+    /**
+     * Update record
+     */
+    async update(storeName, id, updates) {
+        try {
+            // Get existing record
+            const existing = await this.read(storeName, id);
+            if (!existing) {
+                throw new Error(`Record ${id} not found in ${storeName}`);
+            }
+
+            // Merge updates
+            const updated = {
+                ...existing,
+                ...updates,
+                id, // Ensure ID doesn't change
+                updatedAt: new Date().toISOString()
+            };
+
+            // Validate schema
+            this.validateSchema(storeName, updated);
+
+            // Save to IndexedDB
+            if (this.db) {
+                await this.saveToIndexedDB(storeName, updated);
+            }
+
+            // Save to localStorage
+            await this.saveToLocalStorage(storeName, updated);
+
+            console.log(`✅ Updated ${storeName} record:`, id);
+            return updated;
+
+        } catch (error) {
+            console.error(`❌ Failed to update ${storeName} record ${id}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete record
+     */
+    async delete(storeName, id) {
+        try {
+            // Delete from IndexedDB
+            if (this.db) {
+                await this.deleteFromIndexedDB(storeName, id);
+            }
+
+            // Delete from localStorage
+            await this.deleteFromLocalStorage(storeName, id);
+
+            console.log(`✅ Deleted ${storeName} record:`, id);
+            return true;
+
+        } catch (error) {
+            console.error(`❌ Failed to delete ${storeName} record ${id}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Query records with filters
+     */
+    async query(storeName, filters = {}, options = {}) {
+        try {
+            let results = [];
+
+            // Try IndexedDB first
+            if (this.db) {
+                results = await this.queryIndexedDB(storeName, filters, options);
+            } else {
+                // Fallback to localStorage
+                results = await this.queryLocalStorage(storeName, filters, options);
+            }
+
+            return results;
+
+        } catch (error) {
+            console.error(`❌ Failed to query ${storeName}:`, error);
+            return [];
+        }
+    }
+
+    /**
+     * Get all records from store
+     */
+    async getAll(storeName) {
+        return await this.query(storeName);
+    }
+
+    /**
+     * Count records in store
+     */
+    async count(storeName, filters = {}) {
+        const results = await this.query(storeName, filters);
+        return results.length;
+    }
+
+    /**
+     * Clear all records from store
+     */
+    async clear(storeName) {
+        try {
+            // Clear IndexedDB
+            if (this.db) {
+                const transaction = this.db.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                await store.clear();
+            }
+
+            // Clear localStorage
+            const lsKey = `${this.dbName}_${storeName}`;
+            localStorage.removeItem(lsKey);
+
+            console.log(`✅ Cleared ${storeName} store`);
+            return true;
+
+        } catch (error) {
+            console.error(`❌ Failed to clear ${storeName}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Settings management
+     */
+    async getSetting(key, defaultValue = null) {
+        try {
+            const setting = await this.read('settings', key);
+            return setting ? setting.value : defaultValue;
+        } catch (error) {
+            return defaultValue;
+        }
+    }
+
+    async setSetting(key, value, category = 'general') {
+        const setting = {
+            id: key,
+            key,
+            value,
+            type: typeof value,
+            category,
+            updatedAt: new Date().toISOString()
+        };
+
+        return await this.create('settings', setting);
+    }
+
+    /**
+     * Backup operations
+     */
+    async createBackup(type = 'manual') {
+        try {
+            const backupData = {};
+
+            // Get all data from all stores
+            for (const storeName of Object.keys(this.schemas)) {
+                if (storeName !== 'backups') {
+                    backupData[storeName] = await this.getAll(storeName);
                 }
             }
 
-            // Import videos data
-            if (backupData.data.videos) {
-                for (const video of backupData.data.videos) {
-                    await this.addToStore('videos', video);
+            const backup = {
+                id: this.generateId(),
+                timestamp: new Date().toISOString(),
+                data: backupData,
+                size: JSON.stringify(backupData).length,
+                type
+            };
+
+            await this.create('backups', backup);
+
+            console.log('✅ Backup created:', backup.id);
+            return backup;
+
+        } catch (error) {
+            console.error('❌ Failed to create backup:', error);
+            throw error;
+        }
+    }
+
+    async restoreBackup(backupId) {
+        try {
+            const backup = await this.read('backups', backupId);
+            if (!backup) {
+                throw new Error('Backup not found');
+            }
+
+            // Clear existing data
+            for (const storeName of Object.keys(backup.data)) {
+                await this.clear(storeName);
+            }
+
+            // Restore data
+            for (const [storeName, records] of Object.entries(backup.data)) {
+                for (const record of records) {
+                    await this.create(storeName, record);
                 }
             }
 
-            // Import settings
-            if (backupData.data.settings) {
-                localStorage.setItem(this.storageKeys.settings,
-                    JSON.stringify(backupData.data.settings));
+            console.log('✅ Backup restored:', backupId);
+            return true;
+
+        } catch (error) {
+            console.error('❌ Failed to restore backup:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Export data as JSON
+     */
+    async exportData(storeNames = null) {
+        const data = {};
+        const stores = storeNames || Object.keys(this.schemas);
+
+        for (const storeName of stores) {
+            data[storeName] = await this.getAll(storeName);
+        }
+
+        return {
+            timestamp: new Date().toISOString(),
+            version: this.dbVersion,
+            data
+        };
+    }
+
+    /**
+     * Import data from JSON
+     */
+    async importData(importData, merge = false) {
+        try {
+            if (!merge) {
+                // Clear existing data
+                for (const storeName of Object.keys(importData.data)) {
+                    await this.clear(storeName);
+                }
             }
 
-            // Import preferences
-            if (backupData.data.preferences) {
-                localStorage.setItem(this.storageKeys.userPreferences,
-                    JSON.stringify(backupData.data.preferences));
+            // Import new data
+            for (const [storeName, records] of Object.entries(importData.data)) {
+                for (const record of records) {
+                    if (merge) {
+                        const existing = await this.read(storeName, record.id);
+                        if (existing) {
+                            await this.update(storeName, record.id, record);
+                        } else {
+                            await this.create(storeName, record);
+                        }
+                    } else {
+                        await this.create(storeName, record);
+                    }
+                }
             }
-
-            // Update quick stats
-            await this.updateQuickStats();
 
             console.log('✅ Data imported successfully');
             return true;
+
         } catch (error) {
-            console.error('❌ Error importing data:', error);
+            console.error('❌ Failed to import data:', error);
             throw error;
         }
     }
 
-    // ===== VALIDATION FUNCTIONS =====
-
     /**
-     * Validate revenue data
+     * IndexedDB operations
      */
-    validateRevenueData(revenue) {
-        if (!revenue.date) throw new Error('Data è richiesta');
-        if (!revenue.platform) throw new Error('Piattaforma è richiesta');
-        if (typeof revenue.amount !== 'number' || revenue.amount < 0) {
-            throw new Error('Importo deve essere un numero positivo');
-        }
-    }
-
-    /**
-     * Validate video data
-     */
-    validateVideoData(video) {
-        if (!video.title) throw new Error('Titolo è richiesto');
-        if (!video.publishDate) throw new Error('Data pubblicazione è richiesta');
-        if (!video.niche) throw new Error('Nicchia è richiesta');
-        if (video.duration && (typeof video.duration !== 'number' || video.duration <= 0)) {
-            throw new Error('Durata deve essere un numero positivo');
-        }
-    }
-
-    // ===== INDEXEDDB HELPER FUNCTIONS =====
-
-    /**
-     * Add item to IndexedDB store
-     */
-    addToStore(storeName, data) {
+    saveToIndexedDB(storeName, data) {
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
-            const request = store.add(data);
+            const request = store.put(data);
 
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => resolve(data);
             request.onerror = () => reject(request.error);
         });
     }
 
-    /**
-     * Get item from IndexedDB store
-     */
-    getFromStore(storeName, id) {
+    readFromIndexedDB(storeName, id) {
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
@@ -727,109 +535,192 @@ class MusicBusinessDatabase {
         });
     }
 
-    /**
-     * Get all items from IndexedDB store
-     */
-    getAllFromStore(storeName) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            const request = store.getAll();
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * Update item in IndexedDB store
-     */
-    updateInStore(storeName, data) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.put(data);
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * Delete item from IndexedDB store
-     */
-    deleteFromStore(storeName, id) {
+    deleteFromIndexedDB(storeName, id) {
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             const request = store.delete(id);
 
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
         });
     }
 
-    /**
-     * Clear all data from IndexedDB store
-     */
-    clearStore(storeName) {
+    queryIndexedDB(storeName, filters, options) {
         return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
+            const transaction = this.db.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
-            const request = store.clear();
+            const request = store.getAll();
 
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => {
+                let results = request.result;
+
+                // Apply filters
+                results = this.applyFilters(results, filters);
+
+                // Apply sorting
+                if (options.sortBy) {
+                    results = this.applySorting(results, options.sortBy, options.sortOrder);
+                }
+
+                // Apply pagination
+                if (options.limit || options.offset) {
+                    results = this.applyPagination(results, options.offset, options.limit);
+                }
+
+                resolve(results);
+            };
+
             request.onerror = () => reject(request.error);
         });
     }
 
-    // ===== UTILITY FUNCTIONS =====
-
     /**
-     * Convert data to CSV format
+     * LocalStorage operations
      */
-    convertToCSV(data) {
-        let csv = '';
+    async saveToLocalStorage(storeName, data) {
+        const lsKey = `${this.dbName}_${storeName}`;
+        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
+        existing[data.id] = data;
+        localStorage.setItem(lsKey, JSON.stringify(existing));
+    }
 
-        // Revenue CSV
-        if (data.revenue && data.revenue.length > 0) {
-            csv += 'REVENUE DATA\n';
-            csv += 'Date,Platform,Amount,Description,Notes\n';
-            data.revenue.forEach(r => {
-                csv += `${r.date},${r.platform},${r.amount},"${r.description || ''}","${r.notes || ''}"\n`;
-            });
-            csv += '\n';
+    async readFromLocalStorage(storeName, id) {
+        const lsKey = `${this.dbName}_${storeName}`;
+        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
+        return existing[id] || null;
+    }
+
+    async deleteFromLocalStorage(storeName, id) {
+        const lsKey = `${this.dbName}_${storeName}`;
+        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
+        delete existing[id];
+        localStorage.setItem(lsKey, JSON.stringify(existing));
+    }
+
+    async queryLocalStorage(storeName, filters, options) {
+        const lsKey = `${this.dbName}_${storeName}`;
+        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
+        let results = Object.values(existing);
+
+        // Apply filters
+        results = this.applyFilters(results, filters);
+
+        // Apply sorting
+        if (options.sortBy) {
+            results = this.applySorting(results, options.sortBy, options.sortOrder);
         }
 
-        // Videos CSV
-        if (data.videos && data.videos.length > 0) {
-            csv += 'VIDEOS DATA\n';
-            csv += 'Title,Publish Date,Niche,Views,Revenue,CTR,Retention\n';
-            data.videos.forEach(v => {
-                csv += `"${v.title}",${v.publishDate},${v.niche},${v.views || 0},${v.revenue || 0},${v.ctr || 0},${v.retention || 0}\n`;
-            });
+        // Apply pagination
+        if (options.limit || options.offset) {
+            results = this.applyPagination(results, options.offset, options.limit);
         }
 
-        return csv;
+        return results;
     }
 
     /**
-     * Show toast notification
+     * Utility functions
      */
-    showToast(message, type = 'info') {
-        // This will be implemented in app.js
-        if (window.showToast) {
-            window.showToast(message, type);
-        } else {
-            console.log(`${type.toUpperCase()}: ${message}`);
+    applyFilters(data, filters) {
+        return data.filter(item => {
+            return Object.keys(filters).every(key => {
+                const filterValue = filters[key];
+                const itemValue = item[key];
+
+                if (filterValue === null || filterValue === undefined) {
+                    return true;
+                }
+
+                if (typeof filterValue === 'object' && filterValue.operator) {
+                    return this.applyOperator(itemValue, filterValue.value, filterValue.operator);
+                }
+
+                return itemValue === filterValue;
+            });
+        });
+    }
+
+    applyOperator(itemValue, filterValue, operator) {
+        switch (operator) {
+            case 'gt': return itemValue > filterValue;
+            case 'gte': return itemValue >= filterValue;
+            case 'lt': return itemValue < filterValue;
+            case 'lte': return itemValue <= filterValue;
+            case 'ne': return itemValue !== filterValue;
+            case 'contains': return String(itemValue).toLowerCase().includes(String(filterValue).toLowerCase());
+            case 'startsWith': return String(itemValue).toLowerCase().startsWith(String(filterValue).toLowerCase());
+            case 'endsWith': return String(itemValue).toLowerCase().endsWith(String(filterValue).toLowerCase());
+            case 'in': return Array.isArray(filterValue) && filterValue.includes(itemValue);
+            default: return itemValue === filterValue;
         }
+    }
+
+    applySorting(data, sortBy, sortOrder = 'asc') {
+        return data.sort((a, b) => {
+            const aVal = a[sortBy];
+            const bVal = b[sortBy];
+
+            if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }
+
+    applyPagination(data, offset = 0, limit = null) {
+        if (limit) {
+            return data.slice(offset, offset + limit);
+        }
+        return data.slice(offset);
+    }
+
+    validateSchema(storeName, data) {
+        const schema = this.schemas[storeName];
+        if (!schema) {
+            throw new Error(`Schema not found for store: ${storeName}`);
+        }
+
+        // Basic validation - can be expanded
+        for (const [field, type] of Object.entries(schema)) {
+            if (data[field] !== undefined && data[field] !== null) {
+                const actualType = Array.isArray(data[field]) ? 'array' : typeof data[field];
+                if (type !== 'any' && actualType !== type) {
+                    console.warn(`Schema mismatch for ${storeName}.${field}: expected ${type}, got ${actualType}`);
+                }
+            }
+        }
+    }
+
+    generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+    }
+
+    /**
+     * Get database statistics
+     */
+    async getStats() {
+        const stats = {};
+
+        for (const storeName of Object.keys(this.schemas)) {
+            stats[storeName] = await this.count(storeName);
+        }
+
+        return stats;
+    }
+
+    /**
+     * Get singleton instance
+     */
+    static getInstance() {
+        if (!DatabaseManager.instance) {
+            DatabaseManager.instance = new DatabaseManager();
+        }
+        return DatabaseManager.instance;
     }
 }
 
-// Initialize global database instance
-window.musicDB = new MusicBusinessDatabase();
+// Create global instance
+window.DB = DatabaseManager.getInstance();
 
-// Export for module usage
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = MusicBusinessDatabase;
-}
+// Export for modules
+window.DatabaseManager = DatabaseManager;
