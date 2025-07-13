@@ -1,983 +1,1100 @@
 /**
- * MUSIC BUSINESS TRACKER - CORE APPLICATION
- * Main app controller with routing, navigation and initialization
- * VERSIONE DEFINITIVA - COMPLETAMENTE FUNZIONANTE
+ * 🎮 MUSIC BUSINESS TRACKER - APP.JS FINALE
+ * Controller principale completo per tutte le sezioni
  */
 
-class MusicBusinessApp {
+class AppController {
     constructor() {
         this.currentSection = 'dashboard';
-        this.isLoading = false;
-        this.isMobile = window.innerWidth <= 768;
-        this.sidebarOpen = !this.isMobile;
-
-        // Core app state
-        this.appState = {
-            user: {
-                name: 'Music Creator',
-                currency: '€',
-                pivaThreshold: 5000,
-                monthlyTarget: 165,
-                quarterlyTarget: 500,
-                annualTarget: 2000
-            },
-            stats: {
-                todayRevenue: 0,
-                weekRevenue: 0,
-                monthRevenue: 0,
-                yearRevenue: 0,
-                totalVideos: 0,
-                totalSubscribers: 0,
-                totalViews: 0
-            },
-            notifications: [],
-            lastUpdate: new Date().toISOString()
-        };
-
-        // Notification system
-        this.notificationQueue = [];
-        this.notificationCount = 0;
-        this.maxNotifications = 50;
-
+        this.isInitialized = false;
+        this.managers = {};
+        this.sections = ['dashboard', 'revenue', 'videos', 'analytics', 'reports', 'settings'];
         this.init();
     }
 
     /**
-     * Initialize the application
+     * Inizializza applicazione completa
      */
     async init() {
-        console.log('🚀 Music Business Tracker - Initializing...');
-
         try {
-            // Load app state from localStorage
-            await this.loadAppState();
+            // Mostra loader iniziale
+            this.showLoader();
 
-            // Setup event listeners
-            this.setupEventListeners();
+            // Inizializza database
+            await this.initDatabase();
 
-            // Setup navigation
-            this.setupNavigation();
+            // Setup UI base
+            this.initUI();
 
-            // Setup responsive behavior
-            this.setupResponsive();
+            // Bind eventi globali
+            this.bindGlobalEvents();
 
-            // Calculate and update quick stats
-            await this.calculateRealTimeStats();
+            // Inizializza tutti i manager
+            this.initializeManagers();
 
-            // Load initial section
-            this.navigateToSection(this.currentSection);
+            // Inizializza sezione di default
+            this.showSection('dashboard');
 
-            // Auto-save state every 30 seconds
-            this.setupAutoSave();
+            // Setup completato
+            this.hideLoader();
+            this.isInitialized = true;
 
-            // Setup notification cleanup
-            this.setupNotificationCleanup();
-
-            console.log('✅ App initialized successfully');
-
-            // Show welcome notification
-            this.showNotification('App caricata con successo!', 'success');
+            console.log('🎵 Music Business Tracker inizializzato correttamente');
+            NotificationUtils.success('App caricata con successo!');
 
         } catch (error) {
-            console.error('❌ App initialization failed:', error);
-            this.showNotification('Errore inizializzazione app', 'error');
+            handleError(error, 'Errore inizializzazione applicazione');
+            this.showErrorState();
         }
     }
 
     /**
-     * Setup all event listeners
+     * Inizializza database e verifica integrità
      */
-    setupEventListeners() {
-        // Navigation clicks
-        document.addEventListener('click', (e) => {
-            this.handleDocumentClick(e);
-        });
+    async initDatabase() {
+        // Database già inizializzato in database.js
+        // Verifica che tutto sia ok
+        const settings = DB.getSettings();
+        const revenue = DB.getAllRevenue();
+        const videos = StorageUtils.load('mbt_videos_data', []);
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
-            this.handleKeyboardShortcuts(e);
-        });
+        console.log(`Database caricato: ${revenue.length} entrate, ${videos.length} video, settings OK`);
+    }
 
-        // Window resize
-        window.addEventListener('resize', () => {
-            this.handleResize();
-        });
+    /**
+     * Inizializza tutti i manager
+     */
+    initializeManagers() {
+        // I manager sono già inizializzati nei loro file
+        // Qui salviamo i riferimenti per controllo
+        this.managers = {
+            dashboard: window.Dashboard,
+            revenue: window.Revenue,
+            videos: window.Videos,
+            analytics: window.Analytics,
+            reports: window.Reports,
+            settings: window.Settings
+        };
 
-        // Before unload - save state
-        window.addEventListener('beforeunload', () => {
-            this.saveAppState();
-        });
+        // Verifica che tutti i manager siano disponibili
+        const missingManagers = Object.entries(this.managers)
+            .filter(([name, manager]) => !manager)
+            .map(([name]) => name);
 
-        // Data update events
-        window.addEventListener('dataUpdated', () => {
-            this.handleDataUpdate();
+        if (missingManagers.length > 0) {
+            console.warn('Manager mancanti:', missingManagers);
+        }
+    }
+
+    /**
+     * Inizializza UI e componenti base
+     */
+    initUI() {
+        // Aggiorna data header
+        this.updateHeaderDate();
+
+        // Setup sidebar navigation
+        this.setupNavigation();
+
+        // Setup responsive sidebar per mobile
+        this.setupResponsiveSidebar();
+
+        // Setup keyboard shortcuts
+        this.setupKeyboardShortcuts();
+
+        // Setup section action buttons
+        this.setupSectionActions();
+    }
+
+    /**
+     * Aggiorna data nel header
+     */
+    updateHeaderDate() {
+        const dateElement = document.getElementById('currentDate');
+        if (dateElement) {
+            const now = new Date();
+            const options = {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            };
+            dateElement.textContent = now.toLocaleDateString('it-IT', options);
+        }
+    }
+
+    /**
+     * Setup navigation sidebar
+     */
+    setupNavigation() {
+        const navItems = document.querySelectorAll('.nav-item');
+
+        navItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                const section = item.dataset.section;
+                if (section && this.sections.includes(section)) {
+                    this.showSection(section);
+                }
+            });
         });
     }
 
     /**
-     * Handle all document clicks
+     * Setup azioni sezioni
      */
-    handleDocumentClick(e) {
-        // Navigation items
-        if (e.target.closest('.nav-item')) {
-            e.preventDefault();
-            const navItem = e.target.closest('.nav-item');
-            const section = navItem.dataset.section;
-            if (section) {
-                this.navigateToSection(section);
-            }
-            return;
-        }
-
-        // Header action buttons
-        if (e.target.closest('#add-revenue-btn')) {
-            e.preventDefault();
-            this.openAddRevenueModal();
-            return;
-        }
-
-        if (e.target.closest('#add-video-btn')) {
-            e.preventDefault();
-            this.openAddVideoModal();
-            return;
-        }
-
-        if (e.target.closest('#notifications-btn')) {
-            e.preventDefault();
-            this.toggleNotifications();
-            return;
-        }
-
-        // Quick backup and export
-        if (e.target.closest('#quick-backup')) {
-            e.preventDefault();
-            this.quickBackup();
-            return;
-        }
-
-        if (e.target.closest('#quick-export')) {
-            e.preventDefault();
-            this.quickExport();
-            return;
-        }
-
-        // Modal handling
-        if (e.target.closest('#modal-container') && !e.target.closest('.revenue-modal') && !e.target.closest('.modal')) {
-            this.closeModal();
-            return;
-        }
-
-        // Mobile sidebar toggle
-        if (e.target.closest('#mobile-menu-btn')) {
-            e.preventDefault();
-            this.toggleSidebar();
-            return;
-        }
-
-        // Close dropdowns when clicking outside
-        if (!e.target.closest('.filter-dropdown')) {
-            document.querySelectorAll('.filter-dropdown.active').forEach(dropdown => {
-                dropdown.classList.remove('active');
+    setupSectionActions() {
+        // Dashboard actions
+        const addRevenueQuick = document.getElementById('addRevenueQuick');
+        if (addRevenueQuick) {
+            addRevenueQuick.addEventListener('click', () => {
+                if (this.managers.dashboard && this.managers.dashboard.showAddRevenueModal) {
+                    this.managers.dashboard.showAddRevenueModal();
+                }
             });
         }
 
-        // Close notification panel when clicking outside
-        if (!e.target.closest('#notifications-btn') && !e.target.closest('.notification-panel')) {
-            this.closeNotificationPanel();
+        // Revenue actions
+        const addRevenueBtn = document.getElementById('addRevenueBtn');
+        if (addRevenueBtn) {
+            addRevenueBtn.addEventListener('click', () => {
+                if (this.managers.revenue && this.managers.revenue.showAddModal) {
+                    this.managers.revenue.showAddModal();
+                }
+            });
+        }
+
+        const exportRevenueBtn = document.getElementById('exportRevenueBtn');
+        if (exportRevenueBtn) {
+            exportRevenueBtn.addEventListener('click', () => {
+                if (this.managers.revenue && this.managers.revenue.exportCSV) {
+                    this.managers.revenue.exportCSV();
+                }
+            });
+        }
+
+        // Videos actions
+        const addVideoBtn = document.getElementById('addVideoBtn');
+        if (addVideoBtn) {
+            addVideoBtn.addEventListener('click', () => {
+                if (this.managers.videos && this.managers.videos.showAddModal) {
+                    this.managers.videos.showAddModal();
+                }
+            });
+        }
+
+        const syncVideosBtn = document.getElementById('syncVideosBtn');
+        if (syncVideosBtn) {
+            syncVideosBtn.addEventListener('click', () => {
+                if (this.managers.videos && this.managers.videos.syncWithRevenue) {
+                    this.managers.videos.syncWithRevenue();
+                }
+            });
+        }
+
+        // Analytics actions
+        const refreshAnalyticsBtn = document.getElementById('refreshAnalyticsBtn');
+        if (refreshAnalyticsBtn) {
+            refreshAnalyticsBtn.addEventListener('click', () => {
+                if (this.managers.analytics && this.managers.analytics.render) {
+                    this.managers.analytics.loadData();
+                    this.managers.analytics.calculateAnalytics();
+                    this.managers.analytics.generateInsights();
+                    this.managers.analytics.render();
+                }
+            });
+        }
+
+        const exportAnalyticsBtn = document.getElementById('exportAnalyticsBtn');
+        if (exportAnalyticsBtn) {
+            exportAnalyticsBtn.addEventListener('click', () => {
+                if (this.managers.analytics && this.managers.analytics.exportAnalytics) {
+                    this.managers.analytics.exportAnalytics();
+                }
+            });
+        }
+
+        // Reports actions
+        const quickReportBtn = document.getElementById('quickReportBtn');
+        if (quickReportBtn) {
+            quickReportBtn.addEventListener('click', () => {
+                if (this.managers.reports && this.managers.reports.generateQuickReport) {
+                    this.managers.reports.generateQuickReport('commercialista_current');
+                }
+            });
+        }
+
+        const scheduleReportBtn = document.getElementById('scheduleReportBtn');
+        if (scheduleReportBtn) {
+            scheduleReportBtn.addEventListener('click', () => {
+                if (this.managers.reports && this.managers.reports.showScheduleModal) {
+                    this.managers.reports.showScheduleModal();
+                }
+            });
         }
     }
 
     /**
-     * Handle keyboard shortcuts
+     * Setup sidebar responsive per mobile
      */
-    handleKeyboardShortcuts(e) {
-        // Ctrl/Cmd + shortcuts
-        if (e.ctrlKey || e.metaKey) {
-            switch (e.key) {
-                case 'n':
-                    e.preventDefault();
-                    this.openAddRevenueModal();
-                    break;
-                case 's':
-                    e.preventDefault();
-                    this.saveAppState();
-                    this.showNotification('Dati salvati!', 'success');
-                    break;
-                case 'b':
-                    e.preventDefault();
-                    this.quickBackup();
-                    break;
-                case 'e':
-                    e.preventDefault();
-                    this.quickExport();
-                    break;
-                case '1':
-                    e.preventDefault();
-                    this.navigateToSection('dashboard');
-                    break;
-                case '2':
-                    e.preventDefault();
-                    this.navigateToSection('revenue');
-                    break;
-                case '3':
-                    e.preventDefault();
-                    this.navigateToSection('videos');
-                    break;
+    setupResponsiveSidebar() {
+        // Toggle sidebar su mobile
+        const header = document.querySelector('.header');
+        if (header && window.innerWidth <= 768) {
+            const toggleBtn = document.createElement('button');
+            toggleBtn.className = 'mobile-nav-toggle';
+            toggleBtn.innerHTML = '<i class="fas fa-bars"></i>';
+            toggleBtn.addEventListener('click', this.toggleMobileSidebar.bind(this));
+
+            const logo = document.querySelector('.logo');
+            if (logo) {
+                logo.parentNode.insertBefore(toggleBtn, logo.nextSibling);
             }
         }
 
-        // Escape key
-        if (e.key === 'Escape') {
-            this.closeModal();
-            this.closeNotificationPanel();
+        // Chiudi sidebar quando si clicca fuori (mobile)
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768) {
+                const sidebar = document.querySelector('.sidebar');
+                const toggleBtn = document.querySelector('.mobile-nav-toggle');
+
+                if (sidebar && !sidebar.contains(e.target) && !toggleBtn?.contains(e.target)) {
+                    sidebar.classList.remove('active');
+                }
+            }
+        });
+    }
+
+    /**
+     * Toggle sidebar mobile
+     */
+    toggleMobileSidebar() {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) {
+            sidebar.classList.toggle('active');
         }
     }
 
     /**
-     * Setup navigation system
+     * Setup keyboard shortcuts
      */
-    setupNavigation() {
-        this.sections = [
-            { id: 'dashboard', title: 'Dashboard', breadcrumb: ['Home', 'Dashboard'] },
-            { id: 'revenue', title: 'Entrate & Revenue', breadcrumb: ['Home', 'Revenue'] },
-            { id: 'videos', title: 'Video Performance', breadcrumb: ['Home', 'Videos'] },
-            { id: 'analytics', title: 'Streaming Analytics', breadcrumb: ['Home', 'Analytics'] },
-            { id: 'reports', title: 'Reports & Grafici', breadcrumb: ['Home', 'Reports'] },
-            { id: 'calendar', title: 'Content Calendar', breadcrumb: ['Home', 'Calendar'] },
-            { id: 'settings', title: 'Impostazioni', breadcrumb: ['Home', 'Settings'] }
-        ];
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // Ctrl/Cmd + shortcuts
+            if (e.ctrlKey || e.metaKey) {
+                switch (e.key) {
+                    case '1':
+                        e.preventDefault();
+                        this.showSection('dashboard');
+                        break;
+                    case '2':
+                        e.preventDefault();
+                        this.showSection('revenue');
+                        break;
+                    case '3':
+                        e.preventDefault();
+                        this.showSection('videos');
+                        break;
+                    case '4':
+                        e.preventDefault();
+                        this.showSection('analytics');
+                        break;
+                    case '5':
+                        e.preventDefault();
+                        this.showSection('reports');
+                        break;
+                    case '6':
+                        e.preventDefault();
+                        this.showSection('settings');
+                        break;
+                    case 'n':
+                        e.preventDefault();
+                        this.handleQuickAdd();
+                        break;
+                    case 's':
+                        e.preventDefault();
+                        DB.createBackup();
+                        break;
+                    case 'r':
+                        e.preventDefault();
+                        this.refreshCurrentSection();
+                        break;
+                }
+            }
 
-        // Check URL hash for initial section
-        const hash = window.location.hash.slice(1);
-        if (hash && this.sections.find(s => s.id === hash)) {
-            this.currentSection = hash;
+            // Escape per chiudere modali
+            if (e.key === 'Escape') {
+                this.closeActiveModal();
+            }
+        });
+    }
+
+    /**
+     * Gestisce quick add in base alla sezione corrente
+     */
+    handleQuickAdd() {
+        switch (this.currentSection) {
+            case 'revenue':
+                if (this.managers.revenue && this.managers.revenue.showAddModal) {
+                    this.managers.revenue.showAddModal();
+                }
+                break;
+            case 'videos':
+                if (this.managers.videos && this.managers.videos.showAddModal) {
+                    this.managers.videos.showAddModal();
+                }
+                break;
+            case 'reports':
+                if (this.managers.reports && this.managers.reports.generateQuickReport) {
+                    this.managers.reports.generateQuickReport('commercialista_current');
+                }
+                break;
+            default:
+                if (this.managers.dashboard && this.managers.dashboard.showAddRevenueModal) {
+                    this.managers.dashboard.showAddRevenueModal();
+                }
         }
     }
 
     /**
-     * Navigate to a specific section
+     * Refresh sezione corrente
      */
-    navigateToSection(sectionId) {
-        console.log(`📍 Navigating to: ${sectionId}`);
+    refreshCurrentSection() {
+        const manager = this.managers[this.currentSection];
+        if (manager) {
+            if (manager.loadData) manager.loadData();
+            if (manager.render) manager.render();
+            NotificationUtils.success(`${this.currentSection} aggiornato`);
+        }
+    }
 
-        // Validate section exists
-        const section = this.sections.find(s => s.id === sectionId);
-        if (!section) {
-            console.error(`❌ Section not found: ${sectionId}`);
-            this.showNotification('Sezione non trovata', 'error');
+    /**
+     * Mostra sezione specifica
+     */
+    showSection(sectionName) {
+        if (!this.isInitialized) {
+            console.warn('App non ancora inizializzata');
             return;
         }
 
-        // Show loading for better UX
-        this.showLoading();
-
-        // Use timeout for smooth transition
-        setTimeout(async () => {
-            try {
-                // Update current section
-                this.currentSection = sectionId;
-
-                // Update navigation active state
-                this.updateNavigationState(sectionId);
-
-                // Update page header
-                this.updatePageHeader(section);
-
-                // Show section content
-                this.showSection(sectionId);
-
-                // Initialize section module
-                await this.initializeSection(sectionId);
-
-                // Close sidebar on mobile
-                if (this.isMobile) {
-                    this.closeSidebar();
-                }
-
-                // Update URL hash
-                window.location.hash = sectionId;
-
-                // Update quick stats when navigating
-                await this.calculateRealTimeStats();
-
-            } catch (error) {
-                console.error(`❌ Error navigating to ${sectionId}:`, error);
-                this.showNotification('Errore nella navigazione', 'error');
-            } finally {
-                this.hideLoading();
-            }
-        }, 150);
-    }
-
-    /**
-     * Update navigation active state
-     */
-    updateNavigationState(activeSectionId) {
-        // Remove active class from all nav items
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.classList.remove('active');
-        });
-
-        // Add active class to current section
-        const activeNavItem = document.querySelector(`[data-section="${activeSectionId}"]`);
-        if (activeNavItem) {
-            activeNavItem.classList.add('active');
-        }
-    }
-
-    /**
-     * Update page header (title and breadcrumb)
-     */
-    updatePageHeader(section) {
-        // Update page title
-        const pageTitle = document.getElementById('page-title');
-        if (pageTitle) {
-            pageTitle.textContent = section.title;
+        if (!this.sections.includes(sectionName)) {
+            console.error(`Sezione ${sectionName} non valida`);
+            return;
         }
 
-        // Update breadcrumb
-        const breadcrumb = document.getElementById('breadcrumb');
-        if (breadcrumb && section.breadcrumb) {
-            breadcrumb.innerHTML = section.breadcrumb
-                .map((item, index) => {
-                    if (index === section.breadcrumb.length - 1) {
-                        return `<span>${item}</span>`;
+        try {
+            // Nascondi tutte le sezioni
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.remove('active');
+            });
+
+            // Rimuovi active da nav items
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            // Mostra sezione richiesta
+            const targetSection = document.getElementById(`${sectionName}-section`);
+            const targetNavItem = document.querySelector(`[data-section="${sectionName}"]`);
+
+            if (targetSection && targetNavItem) {
+                targetSection.classList.add('active');
+                targetNavItem.classList.add('active');
+
+                const previousSection = this.currentSection;
+                this.currentSection = sectionName;
+
+                // Cleanup sezione precedente se necessario
+                this.cleanupPreviousSection(previousSection);
+
+                // Inizializza/refresh sezione corrente
+                this.initCurrentSection(sectionName);
+
+                // Chiudi sidebar mobile se aperta
+                if (window.innerWidth <= 768) {
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar) {
+                        sidebar.classList.remove('active');
                     }
-                    return `<span>${item}</span><i class="fas fa-chevron-right"></i>`;
-                })
-                .join('');
-        }
+                }
 
-        // Update document title
-        document.title = `${section.title} - Music Business Tracker`;
+                console.log(`Navigazione verso: ${sectionName}`);
+            } else {
+                throw new Error(`Sezione ${sectionName} non trovata nel DOM`);
+            }
+
+        } catch (error) {
+            handleError(error, `Errore navigazione verso ${sectionName}`);
+        }
     }
 
     /**
-     * Show specific section content
+     * Cleanup sezione precedente
      */
-    showSection(sectionId) {
-        // Hide all sections
-        document.querySelectorAll('.content-section').forEach(section => {
-            section.classList.remove('active');
+    cleanupPreviousSection(previousSection) {
+        const previousManager = this.managers[previousSection];
+        if (previousManager && typeof previousManager.cleanup === 'function') {
+            previousManager.cleanup();
+        }
+    }
+
+    /**
+     * Inizializza sezione corrente
+     */
+    initCurrentSection(sectionName) {
+        const manager = this.managers[sectionName];
+
+        if (!manager) {
+            console.warn(`Manager per ${sectionName} non disponibile`);
+            return;
+        }
+
+        try {
+            switch (sectionName) {
+                case 'dashboard':
+                    if (manager.render) {
+                        manager.render();
+                    }
+                    break;
+
+                case 'revenue':
+                    if (manager.loadData) manager.loadData();
+                    if (manager.render) manager.render();
+                    break;
+
+                case 'videos':
+                    if (manager.loadData) manager.loadData();
+                    if (manager.render) manager.render();
+                    break;
+
+                case 'analytics':
+                    if (manager.loadData) manager.loadData();
+                    if (manager.calculateAnalytics) manager.calculateAnalytics();
+                    if (manager.generateInsights) manager.generateInsights();
+                    if (manager.render) manager.render();
+                    break;
+
+                case 'reports':
+                    if (manager.render) manager.render();
+                    break;
+
+                case 'settings':
+                    if (manager.loadSettings) manager.loadSettings();
+                    if (manager.render) manager.render();
+                    break;
+            }
+        } catch (error) {
+            console.error(`Errore inizializzazione sezione ${sectionName}:`, error);
+            this.showSectionError(sectionName);
+        }
+    }
+
+    /**
+     * Mostra errore sezione
+     */
+    showSectionError(sectionName) {
+        const container = document.getElementById(`${sectionName}-content`);
+        if (container) {
+            container.innerHTML = `
+                <div class="card">
+                    <div class="card-body text-center">
+                        <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: var(--accent-danger); margin-bottom: 1rem;"></i>
+                        <h3>Errore Caricamento ${sectionName}</h3>
+                        <p class="text-muted">Si è verificato un errore durante il caricamento.</p>
+                        <button class="btn-primary" onclick="app.showSection('${sectionName}')">
+                            <i class="fas fa-refresh"></i> Riprova
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Bind eventi globali
+     */
+    bindGlobalEvents() {
+        // Backup rapido
+        document.addEventListener('click', (e) => {
+            if (e.target.id === 'quickBackup') {
+                e.preventDefault();
+                DB.createBackup();
+            }
         });
 
-        // Show target section
-        const targetSection = document.getElementById(`${sectionId}-section`);
-        if (targetSection) {
-            targetSection.classList.add('active');
-        }
+        // Gestione resize finestra
+        window.addEventListener('resize', debounce(() => {
+            this.handleWindowResize();
+        }, 250));
+
+        // Gestione beforeunload per backup automatico
+        window.addEventListener('beforeunload', (e) => {
+            this.handleBeforeUnload(e);
+        });
+
+        // Gestione errori globali
+        window.addEventListener('error', (e) => {
+            handleError(e.error, 'Errore JavaScript non gestito');
+        });
+
+        // Gestione promise rejections
+        window.addEventListener('unhandledrejection', (e) => {
+            handleError(e.reason, 'Promise rejection non gestita');
+            e.preventDefault();
+        });
+
+        // Auto-refresh periodico dei dati
+        this.setupPeriodicRefresh();
     }
 
     /**
-     * Initialize section module
+     * Setup refresh periodico
      */
-    async initializeSection(sectionId) {
-        const moduleMap = {
-            'dashboard': () => window.DashboardModule?.init(),
-            'revenue': () => window.RevenueModule?.init(),
-            'videos': () => window.VideosModule?.init(),
-            'analytics': () => window.AnalyticsModule?.init(),
-            'reports': () => window.ReportsModule?.init(),
-            'calendar': () => window.CalendarModule?.init(),
-            'settings': () => window.SettingsModule?.init()
-        };
-
-        const initFunction = moduleMap[sectionId];
-        if (initFunction) {
-            try {
-                await initFunction();
-            } catch (error) {
-                console.warn(`⚠️ Module ${sectionId} initialization error:`, error.message);
-                // Don't show error to user for module loading issues
+    setupPeriodicRefresh() {
+        // Refresh soft ogni 5 minuti
+        setInterval(() => {
+            if (this.isInitialized) {
+                // Solo refresh dashboard se è la sezione corrente
+                if (this.currentSection === 'dashboard' && this.managers.dashboard) {
+                    this.managers.dashboard.render();
+                }
             }
-        }
+        }, 5 * 60 * 1000); // 5 minuti
     }
 
     /**
-     * Setup responsive behavior
+     * Gestisce resize finestra
      */
-    setupResponsive() {
-        this.handleResize();
-    }
-
-    /**
-     * Handle window resize
-     */
-    handleResize() {
-        const wasMobile = this.isMobile;
-        this.isMobile = window.innerWidth <= 768;
-
-        // Handle mobile/desktop transition
-        if (wasMobile !== this.isMobile) {
-            this.sidebarOpen = !this.isMobile;
-            this.updateSidebarState();
-        }
-    }
-
-    /**
-     * Toggle sidebar (mobile)
-     */
-    toggleSidebar() {
-        this.sidebarOpen = !this.sidebarOpen;
-        this.updateSidebarState();
-    }
-
-    /**
-     * Close sidebar (mobile)
-     */
-    closeSidebar() {
-        if (this.isMobile) {
-            this.sidebarOpen = false;
-            this.updateSidebarState();
-        }
-    }
-
-    /**
-     * Update sidebar state
-     */
-    updateSidebarState() {
+    handleWindowResize() {
+        // Aggiorna layout responsive se necessario
         const sidebar = document.querySelector('.sidebar');
-        if (sidebar) {
-            sidebar.classList.toggle('open', this.sidebarOpen);
-        }
-    }
-
-    /**
-     * Calculate real-time stats from database
-     */
-    async calculateRealTimeStats() {
-        try {
-            // Get all revenue data
-            const revenueData = await window.DB.getAll('revenue') || [];
-
-            if (revenueData.length === 0) {
-                this.updateQuickStats();
-                return;
-            }
-
-            const now = new Date();
-
-            // Calculate today's revenue
-            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
-
-            this.appState.stats.todayRevenue = revenueData
-                .filter(rev => {
-                    const revDate = new Date(rev.date);
-                    return revDate >= todayStart && revDate <= todayEnd;
-                })
-                .reduce((sum, rev) => sum + (rev.amount || 0), 0);
-
-            // Calculate week revenue
-            const weekStart = new Date(now);
-            weekStart.setDate(now.getDate() - now.getDay() + 1); // Monday
-            weekStart.setHours(0, 0, 0, 0);
-
-            this.appState.stats.weekRevenue = revenueData
-                .filter(rev => {
-                    const revDate = new Date(rev.date);
-                    return revDate >= weekStart && revDate <= now;
-                })
-                .reduce((sum, rev) => sum + (rev.amount || 0), 0);
-
-            // Calculate month revenue
-            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-            this.appState.stats.monthRevenue = revenueData
-                .filter(rev => {
-                    const revDate = new Date(rev.date);
-                    return revDate >= monthStart && revDate <= now;
-                })
-                .reduce((sum, rev) => sum + (rev.amount || 0), 0);
-
-            // Calculate year revenue
-            const yearStart = new Date(now.getFullYear(), 0, 1);
-
-            this.appState.stats.yearRevenue = revenueData
-                .filter(rev => {
-                    const revDate = new Date(rev.date);
-                    return revDate >= yearStart && revDate <= now;
-                })
-                .reduce((sum, rev) => sum + (rev.amount || 0), 0);
-
-            // Update UI
-            this.updateQuickStats();
-
-        } catch (error) {
-            console.error('❌ Failed to calculate real-time stats:', error);
-        }
-    }
-
-    /**
-     * Update quick stats in sidebar and header
-     */
-    updateQuickStats() {
-        // Sidebar quick stats
-        const quickRevenue = document.getElementById('quick-revenue');
-        if (quickRevenue) {
-            quickRevenue.textContent = this.formatCurrency(this.appState.stats.monthRevenue);
+        if (sidebar && window.innerWidth > 768) {
+            sidebar.classList.remove('active');
         }
 
-        const quickPiva = document.getElementById('quick-piva');
-        if (quickPiva) {
-            const percentage = Math.round((this.appState.stats.yearRevenue / this.appState.user.pivaThreshold) * 100);
-            quickPiva.textContent = `€${Math.round(this.appState.stats.yearRevenue)} / €${this.appState.user.pivaThreshold} (${percentage}%)`;
-        }
-
-        // Header stats
-        const headerToday = document.getElementById('header-today');
-        if (headerToday) {
-            headerToday.textContent = this.formatCurrency(this.appState.stats.todayRevenue);
-        }
-
-        const headerWeek = document.getElementById('header-week');
-        if (headerWeek) {
-            headerWeek.textContent = this.formatCurrency(this.appState.stats.weekRevenue);
-        }
-    }
-
-    /**
-     * Handle data updates from modules
-     */
-    async handleDataUpdate() {
-        await this.calculateRealTimeStats();
-        this.saveAppState();
-    }
-
-    /**
-     * Show loading overlay
-     */
-    showLoading() {
-        this.isLoading = true;
-        const overlay = document.getElementById('loading-overlay');
-        if (overlay) {
-            overlay.classList.remove('hidden');
-        }
-    }
-
-    /**
-     * Hide loading overlay
-     */
-    hideLoading() {
-        this.isLoading = false;
-        const overlay = document.getElementById('loading-overlay');
-        if (overlay) {
-            overlay.classList.add('hidden');
-        }
-    }
-
-    /**
-     * Show notification with auto-cleanup
-     */
-    showNotification(message, type = 'info', duration = 4000, persistent = false) {
-        const container = document.getElementById('notification-container');
-        if (!container) return;
-
-        const notificationId = Date.now() + Math.random();
-
-        const notification = document.createElement('div');
-        notification.className = `notification ${type}`;
-        notification.dataset.id = notificationId;
-        notification.innerHTML = `
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-                <i class="fas ${this.getNotificationIcon(type)}" style="flex-shrink: 0;"></i>
-                <span style="flex: 1;">${message}</span>
-                <button onclick="this.parentElement.parentElement.remove(); window.App.removeNotificationFromList('${notificationId}')" 
-                        style="margin-left: auto; background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px;">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        `;
-
-        container.appendChild(notification);
-
-        // Add to notifications list
-        const notificationData = {
-            id: notificationId,
-            message,
-            type,
-            timestamp: new Date().toISOString(),
-            read: false
-        };
-
-        this.appState.notifications.unshift(notificationData);
-
-        // Keep only last 50 notifications
-        if (this.appState.notifications.length > this.maxNotifications) {
-            this.appState.notifications = this.appState.notifications.slice(0, this.maxNotifications);
-        }
-
-        this.updateNotificationBadge();
-
-        // Auto remove after duration (unless persistent)
-        if (!persistent) {
+        // Re-render charts se necessario
+        if (this.currentSection === 'analytics' && this.managers.analytics) {
             setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.remove();
+                if (this.managers.analytics.renderCharts) {
+                    this.managers.analytics.renderCharts();
                 }
-            }, duration);
+            }, 100);
         }
     }
 
     /**
-     * Remove notification from internal list
+     * Gestisce chiusura app
      */
-    removeNotificationFromList(notificationId) {
-        this.appState.notifications = this.appState.notifications.filter(n => n.id !== notificationId);
-        this.updateNotificationBadge();
+    handleBeforeUnload(e) {
+        // Auto-backup se ci sono modifiche recenti
+        const metadata = StorageUtils.load('mbt_metadata', {});
+        const lastBackup = metadata.lastBackup ? new Date(metadata.lastBackup) : null;
+        const now = new Date();
+
+        // Se ultimo backup > 24 ore fa, suggerisci backup
+        if (!lastBackup || (now - lastBackup) > 24 * 60 * 60 * 1000) {
+            e.preventDefault();
+            e.returnValue = 'Hai modifiche non salvate. Vuoi creare un backup prima di uscire?';
+            return e.returnValue;
+        }
     }
 
     /**
-     * Get notification icon based on type
+     * Chiude modal attivo
      */
-    getNotificationIcon(type) {
-        const icons = {
-            success: 'fa-check-circle',
-            error: 'fa-exclamation-circle',
-            warning: 'fa-exclamation-triangle',
-            info: 'fa-info-circle'
+    closeActiveModal() {
+        const activeModal = document.querySelector('.modal-container.active');
+        if (activeModal) {
+            activeModal.classList.remove('active');
+        }
+    }
+
+    /**
+     * Mostra loader
+     */
+    showLoader() {
+        const loader = document.createElement('div');
+        loader.id = 'app-loader';
+        loader.innerHTML = `
+            <div class="loader-content">
+                <i class="fas fa-music loader-icon"></i>
+                <div class="loader-text">Caricamento Music Business Tracker...</div>
+                <div class="loader-progress">
+                    <div class="loader-bar"></div>
+                </div>
+                <div class="loader-details">
+                    Inizializzando database e moduli...
+                </div>
+            </div>
+        `;
+        document.body.appendChild(loader);
+    }
+
+    /**
+     * Nascondi loader
+     */
+    hideLoader() {
+        const loader = document.getElementById('app-loader');
+        if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => loader.remove(), 300);
+        }
+    }
+
+    /**
+     * Mostra stato errore
+     */
+    showErrorState() {
+        const container = document.querySelector('.container');
+        if (container) {
+            container.innerHTML = `
+                <div class="error-state">
+                    <div class="error-content">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <h2>Errore Inizializzazione</h2>
+                        <p>Si è verificato un errore durante il caricamento dell'applicazione.</p>
+                        <div class="error-details">
+                            <p>Possibili cause:</p>
+                            <ul>
+                                <li>Problema con il browser storage</li>
+                                <li>Script non caricati correttamente</li>
+                                <li>Incompatibilità browser</li>
+                            </ul>
+                        </div>
+                        <div class="error-actions">
+                            <button class="btn-primary" onclick="window.location.reload()">
+                                <i class="fas fa-refresh"></i> Ricarica Pagina
+                            </button>
+                            <button class="btn-secondary" onclick="app.clearAllData()">
+                                <i class="fas fa-trash"></i> Reset Dati
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Reset completo dati (emergency)
+     */
+    clearAllData() {
+        if (confirm('ATTENZIONE: Questa azione eliminerà tutti i dati. Continuare?')) {
+            try {
+                StorageUtils.remove('mbt_revenue_data');
+                StorageUtils.remove('mbt_videos_data');
+                StorageUtils.remove('mbt_settings');
+                StorageUtils.remove('mbt_metadata');
+                StorageUtils.remove('mbt_scheduled_reports');
+
+                alert('Dati eliminati. La pagina verrà ricaricata.');
+                window.location.reload();
+            } catch (error) {
+                alert('Errore durante il reset: ' + error.message);
+            }
+        }
+    }
+
+    /**
+     * Ottieni stato app completo
+     */
+    getAppState() {
+        return {
+            currentSection: this.currentSection,
+            isInitialized: this.isInitialized,
+            availableManagers: Object.keys(this.managers).filter(key => this.managers[key]),
+            revenueCount: DB.getAllRevenue().length,
+            videoCount: StorageUtils.load('mbt_videos_data', []).length,
+            settings: DB.getSettings(),
+            storageSize: (StorageUtils.getStorageSize() / 1024).toFixed(1) + ' KB',
+            lastUpdate: new Date().toISOString()
         };
-        return icons[type] || icons.info;
     }
 
     /**
-     * Update notification badge
+     * Debug info completo
      */
-    updateNotificationBadge() {
-        const badge = document.getElementById('notification-count');
-        if (badge) {
-            const unreadCount = this.appState.notifications.filter(n => !n.read).length;
-            badge.textContent = unreadCount;
-            badge.style.display = unreadCount > 0 ? 'flex' : 'none';
-        }
+    debug() {
+        const state = this.getAppState();
+        console.log('🎵 Music Business Tracker Debug Info:');
+        console.table(state);
+
+        // Test tutti i manager
+        console.log('\n📊 Manager Status:');
+        Object.entries(this.managers).forEach(([name, manager]) => {
+            console.log(`${name}: ${manager ? '✅ OK' : '❌ Missing'}`);
+        });
+
+        // Storage info
+        console.log('\n💾 Storage Info:');
+        console.log('Size:', state.storageSize);
+        console.log('Revenue entries:', state.revenueCount);
+        console.log('Video entries:', state.videoCount);
     }
 
     /**
-     * Toggle notifications panel
+     * Mostra shortcuts help
      */
-    toggleNotifications() {
-        let panel = document.getElementById('notification-panel');
+    showShortcutsHelp() {
+        const modal = document.getElementById('modal-container');
+        if (!modal) return;
 
-        if (!panel) {
-            panel = this.createNotificationPanel();
-        }
-
-        const isVisible = panel.style.display === 'block';
-
-        if (isVisible) {
-            panel.style.display = 'none';
-        } else {
-            panel.style.display = 'block';
-            this.renderNotifications();
-            // Mark all as read
-            this.appState.notifications.forEach(n => n.read = true);
-            this.updateNotificationBadge();
-        }
-    }
-
-    /**
-     * Create notification panel
-     */
-    createNotificationPanel() {
-        const panel = document.createElement('div');
-        panel.id = 'notification-panel';
-        panel.className = 'notification-panel';
-        panel.style.cssText = `
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            width: 350px;
-            max-height: 400px;
-            background: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius-lg);
-            box-shadow: var(--shadow-xl);
-            z-index: 9999;
-            display: none;
-            overflow: hidden;
-        `;
-
-        document.body.appendChild(panel);
-        return panel;
-    }
-
-    /**
-     * Render notifications in panel
-     */
-    renderNotifications() {
-        const panel = document.getElementById('notification-panel');
-        if (!panel) return;
-
-        const notifications = this.appState.notifications.slice(0, 20); // Show last 20
-
-        panel.innerHTML = `
-            <div style="padding: var(--spacing-lg); border-bottom: 1px solid var(--border-color);">
-                <h3 style="margin: 0; color: var(--text-primary); font-size: 1rem;">Notifiche</h3>
-                <button onclick="window.App.clearAllNotifications()" 
-                        style="position: absolute; top: var(--spacing-lg); right: var(--spacing-lg); background: none; border: none; color: var(--text-muted); cursor: pointer;">
-                    Cancella tutto
-                </button>
-            </div>
-            <div style="max-height: 300px; overflow-y: auto;">
-                ${notifications.length === 0 ? `
-                    <div style="padding: var(--spacing-xl); text-align: center; color: var(--text-muted);">
-                        <i class="fas fa-bell" style="font-size: 2rem; margin-bottom: var(--spacing-md);"></i>
-                        <p>Nessuna notifica</p>
-                    </div>
-                ` : notifications.map(notification => `
-                    <div style="padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid var(--border-color); ${!notification.read ? 'background: rgba(59, 130, 246, 0.05);' : ''}">
-                        <div style="display: flex; align-items: center; gap: var(--spacing-sm); margin-bottom: var(--spacing-xs);">
-                            <i class="fas ${this.getNotificationIcon(notification.type)}" style="color: var(--accent-${notification.type === 'error' ? 'red' : notification.type === 'warning' ? 'orange' : notification.type === 'success' ? 'green' : 'blue'});"></i>
-                            <span style="font-size: 0.875rem; color: var(--text-primary);">${notification.message}</span>
+        modal.innerHTML = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 class="modal-title">⌨️ Keyboard Shortcuts</h3>
+                    <button class="modal-close" onclick="this.closest('.modal-container').classList.remove('active')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="shortcuts-grid">
+                        <div class="shortcut-group">
+                            <h4>Navigazione</h4>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+1</kbd> <span>Dashboard</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+2</kbd> <span>Revenue</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+3</kbd> <span>Video</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+4</kbd> <span>Analytics</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+5</kbd> <span>Reports</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+6</kbd> <span>Settings</span>
+                            </div>
                         </div>
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">
-                            ${window.Utils.getRelativeTime(notification.timestamp)}
+                        
+                        <div class="shortcut-group">
+                            <h4>Azioni</h4>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+N</kbd> <span>Nuovo (contestuale)</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+S</kbd> <span>Backup</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Ctrl+R</kbd> <span>Refresh sezione</span>
+                            </div>
+                            <div class="shortcut-item">
+                                <kbd>Esc</kbd> <span>Chiudi modal</span>
+                            </div>
                         </div>
                     </div>
-                `).join('')}
+                </div>
             </div>
         `;
-    }
 
-    /**
-     * Close notification panel
-     */
-    closeNotificationPanel() {
-        const panel = document.getElementById('notification-panel');
-        if (panel) {
-            panel.style.display = 'none';
-        }
-    }
-
-    /**
-     * Clear all notifications
-     */
-    clearAllNotifications() {
-        this.appState.notifications = [];
-        this.updateNotificationBadge();
-        this.renderNotifications();
-    }
-
-    /**
-     * Setup notification cleanup
-     */
-    setupNotificationCleanup() {
-        // Clean old notifications every hour
-        setInterval(() => {
-            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            this.appState.notifications = this.appState.notifications.filter(n =>
-                new Date(n.timestamp) > oneWeekAgo
-            );
-            this.updateNotificationBadge();
-        }, 60 * 60 * 1000); // Every hour
-    }
-
-    /**
-     * Quick action handlers - ALL FUNCTIONAL
-     */
-    openAddRevenueModal() {
-        this.navigateToSection('revenue');
-        setTimeout(() => {
-            if (window.RevenueModule && window.RevenueModule.openRevenueModal) {
-                window.RevenueModule.openRevenueModal();
-            }
-        }, 300);
-    }
-
-    openAddVideoModal() {
-        this.navigateToSection('videos');
-        setTimeout(() => {
-            if (window.VideosModule && window.VideosModule.openVideoModal) {
-                window.VideosModule.openVideoModal();
-            } else {
-                this.showNotification('Modulo Video in arrivo!', 'info');
-            }
-        }, 300);
-    }
-
-    /**
-     * Close any open modal
-     */
-    closeModal() {
-        const modalContainer = document.getElementById('modal-container');
-        if (modalContainer) {
-            modalContainer.classList.remove('active');
-            modalContainer.innerHTML = '';
-        }
-    }
-
-    /**
-     * Quick backup function - FUNCTIONAL
-     */
-    async quickBackup() {
-        try {
-            this.showNotification('Creazione backup in corso...', 'info', 2000);
-
-            const backupData = {
-                appState: this.appState,
-                timestamp: new Date().toISOString(),
-                version: '1.0.0',
-                data: {}
-            };
-
-            // Get all data from database
-            const storeNames = ['revenue', 'videos', 'streaming', 'settings'];
-            for (const storeName of storeNames) {
-                try {
-                    backupData.data[storeName] = await window.DB.getAll(storeName);
-                } catch (error) {
-                    console.warn(`⚠️ Could not backup ${storeName}:`, error);
-                    backupData.data[storeName] = [];
-                }
-            }
-
-            const dataStr = JSON.stringify(backupData, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `music-business-backup-${new Date().toISOString().split('T')[0]}.json`;
-
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-
-            URL.revokeObjectURL(url);
-
-            this.showNotification('Backup creato con successo!', 'success');
-
-        } catch (error) {
-            console.error('❌ Backup failed:', error);
-            this.showNotification('Errore durante il backup', 'error');
-        }
-    }
-
-    /**
-     * Quick export CSV function - FUNCTIONAL
-     */
-    async quickExport() {
-        try {
-            const revenueData = await window.DB.getAll('revenue');
-
-            if (!revenueData || revenueData.length === 0) {
-                this.showNotification('Nessun dato da esportare', 'warning');
-                return;
-            }
-
-            const csvData = revenueData.map(item => ({
-                'Data': window.Utils.formatDate(item.date),
-                'Piattaforma': item.platform,
-                'Importo': item.amount,
-                'Valuta': item.currency || '€',
-                'Categoria': item.category || 'Altri',
-                'Video/Track ID': item.videoId || '',
-                'Note': item.notes || ''
-            }));
-
-            const filename = `revenue-export-${new Date().toISOString().split('T')[0]}.csv`;
-            window.Utils.downloadCSV(csvData, filename);
-
-            this.showNotification('Export CSV completato!', 'success');
-
-        } catch (error) {
-            console.error('❌ Export failed:', error);
-            this.showNotification('Errore durante l\'export', 'error');
-        }
-    }
-
-    /**
-     * Load app state from localStorage
-     */
-    async loadAppState() {
-        try {
-            const saved = localStorage.getItem('musicBusinessTracker');
-            if (saved) {
-                const savedState = JSON.parse(saved);
-                this.appState = { ...this.appState, ...savedState };
-                console.log('📂 App state loaded from localStorage');
-            }
-
-            // Load user settings from database
-            if (window.DB) {
-                const pivaThreshold = await window.DB.getSetting('pivaThreshold', 5000);
-                const monthlyTarget = await window.DB.getSetting('monthlyTarget', 165);
-
-                this.appState.user.pivaThreshold = pivaThreshold;
-                this.appState.user.monthlyTarget = monthlyTarget;
-            }
-
-        } catch (error) {
-            console.error('❌ Failed to load app state:', error);
-        }
-    }
-
-    /**
-     * Save app state to localStorage
-     */
-    saveAppState() {
-        try {
-            this.appState.lastUpdate = new Date().toISOString();
-            localStorage.setItem('musicBusinessTracker', JSON.stringify(this.appState));
-            console.log('💾 App state saved to localStorage');
-        } catch (error) {
-            console.error('❌ Failed to save app state:', error);
-        }
-    }
-
-    /**
-     * Setup auto-save
-     */
-    setupAutoSave() {
-        setInterval(() => {
-            this.saveAppState();
-        }, 30000); // Save every 30 seconds
-    }
-
-    /**
-     * Format currency value
-     */
-    formatCurrency(value) {
-        return new Intl.NumberFormat('it-IT', {
-            style: 'currency',
-            currency: 'EUR',
-            minimumFractionDigits: 2
-        }).format(value || 0);
-    }
-
-    /**
-     * Format date
-     */
-    formatDate(date) {
-        return new Intl.DateTimeFormat('it-IT', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        }).format(new Date(date));
-    }
-
-    /**
-     * Format number
-     */
-    formatNumber(value) {
-        return new Intl.NumberFormat('it-IT').format(value || 0);
-    }
-
-    /**
-     * Get app instance (singleton pattern)
-     */
-    static getInstance() {
-        if (!MusicBusinessApp.instance) {
-            MusicBusinessApp.instance = new MusicBusinessApp();
-        }
-        return MusicBusinessApp.instance;
+        modal.classList.add('active');
     }
 }
 
-// Initialize app when DOM is loaded
+// CSS aggiuntivo per app controller
+const appCSS = `
+<style>
+#app-loader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    transition: opacity 0.3s ease;
+}
+
+.loader-content {
+    text-align: center;
+    max-width: 400px;
+    padding: var(--spacing-xl);
+}
+
+.loader-icon {
+    font-size: 4rem;
+    color: var(--accent-primary);
+    margin-bottom: var(--spacing-lg);
+    animation: pulse 2s infinite;
+}
+
+.loader-text {
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-lg);
+    font-size: var(--font-size-xl);
+    font-weight: 600;
+}
+
+.loader-details {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin-top: var(--spacing-md);
+}
+
+.loader-progress {
+    width: 100%;
+    height: 6px;
+    background-color: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: var(--spacing-lg);
+}
+
+.loader-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-info));
+    width: 0;
+    animation: loading 3s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
+}
+
+@keyframes loading {
+    0% { width: 0; }
+    50% { width: 70%; }
+    100% { width: 100%; }
+}
+
+.error-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - var(--header-height));
+    padding: var(--spacing-xl);
+}
+
+.error-content {
+    text-align: center;
+    max-width: 500px;
+    background-color: var(--bg-secondary);
+    padding: var(--spacing-xl);
+    border-radius: 12px;
+    border: 1px solid var(--border-primary);
+}
+
+.error-content i {
+    font-size: 4rem;
+    color: var(--accent-danger);
+    margin-bottom: var(--spacing-lg);
+}
+
+.error-content h2 {
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+}
+
+.error-content p {
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-lg);
+}
+
+.error-details {
+    text-align: left;
+    background-color: var(--bg-tertiary);
+    padding: var(--spacing-md);
+    border-radius: 6px;
+    margin: var(--spacing-lg) 0;
+}
+
+.error-details ul {
+    margin: var(--spacing-sm) 0 0 var(--spacing-lg);
+    color: var(--text-secondary);
+}
+
+.error-actions {
+    display: flex;
+    gap: var(--spacing-md);
+    justify-content: center;
+}
+
+.mobile-nav-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+    cursor: pointer;
+    padding: var(--spacing-sm);
+    border-radius: 4px;
+    transition: var(--transition-fast);
+}
+
+.mobile-nav-toggle:hover {
+    background-color: var(--bg-hover);
+}
+
+.shortcuts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-xl);
+}
+
+.shortcut-group h4 {
+    color: var(--text-primary);
+    margin-bottom: var(--spacing-md);
+    border-bottom: 1px solid var(--border-primary);
+    padding-bottom: var(--spacing-sm);
+}
+
+.shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px solid var(--border-secondary);
+}
+
+.shortcut-item:last-child {
+    border-bottom: none;
+}
+
+.shortcut-item kbd {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 4px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-family: monospace;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+}
+
+.shortcut-item span {
+    color: var(--text-secondary);
+}
+
+@media (max-width: 768px) {
+    .mobile-nav-toggle {
+        display: block;
+    }
+    
+    .sidebar {
+        transform: translateX(-100%);
+        transition: transform var(--transition-normal);
+        z-index: 1001;
+    }
+    
+    .sidebar.active {
+        transform: translateX(0);
+    }
+    
+    .content {
+        margin-left: 0;
+    }
+    
+    .shortcuts-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .error-actions {
+        flex-direction: column;
+    }
+}
+
+/* Utility classes */
+.fade-in {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Focus management */
+.section.active {
+    animation: sectionFadeIn 0.2s ease;
+}
+
+@keyframes sectionFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Loading states migliorati */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-xl);
+    color: var(--text-secondary);
+    font-size: var(--font-size-base);
+    min-height: 200px;
+}
+
+.loading i {
+    font-size: var(--font-size-xl);
+    color: var(--accent-primary);
+}
+
+/* Status indicators */
+.app-status {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    font-size: var(--font-size-sm);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--accent-primary);
+    animation: pulse 2s infinite;
+}
+
+.status-dot.offline {
+    background-color: var(--accent-danger);
+}
+
+.status-dot.warning {
+    background-color: var(--accent-warning);
+}
+</style>
+`;
+
+// Inject CSS
+document.head.insertAdjacentHTML('beforeend', appCSS);
+
+// Inizializza app quando DOM è pronto
 document.addEventListener('DOMContentLoaded', () => {
-    window.App = MusicBusinessApp.getInstance();
+    // Crea istanza app globale
+    window.app = new AppController();
+
+    // Funzioni helper globali
+    window.debug = () => window.app.debug();
+    window.showShortcuts = () => window.app.showShortcutsHelp();
+
+    // Status monitor
+    window.addEventListener('online', () => {
+        const status = document.getElementById('appStatus');
+        if (status) {
+            status.innerHTML = '● Online';
+            status.className = 'status online';
+        }
+    });
+
+    window.addEventListener('offline', () => {
+        const status = document.getElementById('appStatus');
+        if (status) {
+            status.innerHTML = '● Offline';
+            status.className = 'status offline';
+        }
+    });
+
+    console.log('🎵 Music Business Tracker - Ready to rock!');
+    console.log('💡 Tip: Usa Ctrl+1-6 per navigare, Ctrl+N per aggiungere, debug() per info');
 });
 
-// Make app available globally
-window.MusicBusinessApp = MusicBusinessApp;
+// Export per uso globale
+window.AppController = AppController;

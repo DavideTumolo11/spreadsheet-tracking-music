@@ -1,314 +1,244 @@
 /**
- * MUSIC BUSINESS TRACKER - DASHBOARD MODULE
- * Main dashboard with KPIs, charts, alerts and quick actions
+ * 📊 MUSIC BUSINESS TRACKER - DASHBOARD.JS
+ * Dashboard principale con stats e overview
  */
 
-class DashboardModule {
+class DashboardManager {
     constructor() {
-        this.charts = {};
+        this.container = null;
         this.refreshInterval = null;
-        this.currentPeriod = 'month';
-        this.isInitialized = false;
-
-        // Dashboard data cache
-        this.dashboardData = {
-            revenue: {
-                today: 0,
-                week: 0,
-                month: 0,
-                year: 0,
-                growth: 0
-            },
-            videos: {
-                total: 0,
-                published: 0,
-                views: 0,
-                growth: 0
-            },
-            streaming: {
-                plays: 0,
-                listeners: 0,
-                revenue: 0,
-                growth: 0
-            },
-            targets: {
-                monthly: 165,
-                quarterly: 500,
-                annual: 2000,
-                piva: 5000
-            },
-            recentActivity: []
-        };
+        this.init();
     }
 
     /**
-     * Initialize dashboard module
+     * Inizializza dashboard
      */
-    async init() {
-        if (this.isInitialized) return;
+    init() {
+        this.container = document.getElementById('dashboard-content');
+        if (!this.container) {
+            console.error('Container dashboard non trovato');
+            return;
+        }
 
-        console.log('📊 Initializing Dashboard Module...');
+        this.render();
+        this.bindEvents();
+
+        // Auto-refresh ogni 30 secondi
+        this.startAutoRefresh();
+    }
+
+    /**
+     * Render completo dashboard
+     */
+    render() {
+        if (!this.container) return;
 
         try {
-            // Load user settings
-            await this.loadSettings();
+            const stats = DB.getRevenueStats();
+            const pivaStatus = DB.checkPivaStatus();
+            const monthlyGoals = DB.checkMonthlyGoals();
+            const trends = DB.getMonthlyTrends();
 
-            // Build dashboard UI
-            await this.buildDashboard();
+            this.container.innerHTML = `
+                <!-- 📊 STATS CARDS -->
+                <div class="stats-grid">
+                    ${this.renderStatsCards(stats, pivaStatus, monthlyGoals)}
+                </div>
 
-            // Load and display data
-            await this.loadDashboardData();
+                <!-- ⚠️ ALERTS SECTION -->
+                <div class="alerts-section">
+                    ${this.renderAlerts(pivaStatus, monthlyGoals)}
+                </div>
 
-            // Setup real-time updates
-            this.setupRealTimeUpdates();
+                <!-- 📈 CHARTS & OVERVIEW -->
+                <div class="dashboard-grid">
+                    <div class="dashboard-left">
+                        ${this.renderTrendChart(trends)}
+                        ${this.renderQuickActions()}
+                    </div>
+                    <div class="dashboard-right">
+                        ${this.renderPlatformBreakdown(stats.byPlatform)}
+                        ${this.renderRecentEntries()}
+                    </div>
+                </div>
+            `;
 
-            // Setup event listeners
-            this.setupEventListeners();
-
-            this.isInitialized = true;
-            console.log('✅ Dashboard Module initialized');
+            // Render grafici dopo DOM update
+            setTimeout(() => {
+                this.renderCharts(trends, stats.byPlatform);
+            }, 100);
 
         } catch (error) {
-            console.error('❌ Dashboard initialization failed:', error);
-            this.showError('Errore inizializzazione dashboard');
+            handleError(error, 'Errore rendering dashboard');
+            this.renderError();
         }
     }
 
     /**
-     * Load user settings
+     * Render stats cards principali
      */
-    async loadSettings() {
-        const settings = await Promise.all([
-            window.DB.getSetting('currency', '€'),
-            window.DB.getSetting('pivaThreshold', 5000),
-            window.DB.getSetting('monthlyTarget', 165),
-            window.DB.getSetting('quarterlyTarget', 500),
-            window.DB.getSetting('annualTarget', 2000)
-        ]);
+    renderStatsCards(stats, pivaStatus, monthlyGoals) {
+        const monthlyProgress = monthlyGoals.percentage;
+        const pivaProgress = pivaStatus.percentage;
+        const yearlyAverage = stats.currentYearEntries > 0 ? stats.currentYearRevenue / 12 : 0;
 
-        this.dashboardData.targets = {
-            monthly: settings[2],
-            quarterly: settings[3],
-            annual: settings[4],
-            piva: settings[1]
-        };
+        return `
+            <!-- Revenue Mese Corrente -->
+            <div class="stat-card">
+                <div class="stat-value">${NumberUtils.formatCurrency(stats.currentMonthRevenue)}</div>
+                <div class="stat-label">Revenue Questo Mese</div>
+                <div class="stat-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${Math.min(monthlyProgress, 100)}%"></div>
+                    </div>
+                    <span class="progress-text">${monthlyProgress.toFixed(1)}% dell'obiettivo</span>
+                </div>
+                <div class="stat-change ${monthlyGoals.achieved ? 'positive' : ''}">
+                    ${monthlyGoals.remaining > 0 ?
+                `${NumberUtils.formatCurrency(monthlyGoals.remaining)} rimanenti` :
+                '🎯 Obiettivo raggiunto!'}
+                </div>
+            </div>
 
-        this.currency = settings[0];
+            <!-- Revenue Anno Corrente -->
+            <div class="stat-card">
+                <div class="stat-value">${NumberUtils.formatCurrency(stats.currentYearRevenue)}</div>
+                <div class="stat-label">Revenue Anno Corrente</div>
+                <div class="stat-details">
+                    <span>${stats.currentYearEntries} entrate totali</span>
+                    <span>Media: ${NumberUtils.formatCurrency(yearlyAverage)}/mese</span>
+                </div>
+            </div>
+
+            <!-- Stato P.IVA -->
+            <div class="stat-card ${pivaStatus.needsPiva ? 'warning' : ''}">
+                <div class="stat-value">${NumberUtils.formatCurrency(pivaStatus.currentRevenue)}</div>
+                <div class="stat-label">Soglia P.IVA (${NumberUtils.formatCurrency(pivaStatus.threshold)})</div>
+                <div class="stat-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill ${pivaProgress >= 80 ? 'warning' : ''}" 
+                             style="width: ${Math.min(pivaProgress, 100)}%"></div>
+                    </div>
+                    <span class="progress-text">${pivaProgress.toFixed(1)}% della soglia</span>
+                </div>
+                <div class="stat-change ${pivaProgress >= 80 ? 'warning' : ''}">
+                    ${pivaStatus.needsPiva ?
+                '⚠️ P.IVA richiesta!' :
+                `${NumberUtils.formatCurrency(pivaStatus.remaining)} rimanenti`}
+                </div>
+            </div>
+
+            <!-- Media per Entrata -->
+            <div class="stat-card">
+                <div class="stat-value">${NumberUtils.formatCurrency(stats.averagePerEntry)}</div>
+                <div class="stat-label">Media per Entrata</div>
+                <div class="stat-details">
+                    <span>${stats.totalEntries} entrate totali</span>
+                    <span>${stats.currentMonthEntries} questo mese</span>
+                </div>
+            </div>
+        `;
     }
 
     /**
-     * Build dashboard HTML structure
+     * Render alerts sezione
      */
-    async buildDashboard() {
-        const container = document.getElementById('dashboard-section');
-        if (!container) return;
+    renderAlerts(pivaStatus, monthlyGoals) {
+        const alerts = [];
 
-        container.innerHTML = `
-            <div class="dashboard-container">
-                <!-- Alerts Section -->
-                <div class="dashboard-alerts" id="dashboard-alerts"></div>
-                
-                <!-- KPI Cards Row -->
-                <div class="dashboard-row kpi-cards">
-                    <div class="kpi-card revenue" id="revenue-card">
-                        <div class="kpi-header">
-                            <span class="kpi-title">Revenue Mensile</span>
-                            <div class="kpi-icon revenue">
-                                <i class="fas fa-euro-sign"></i>
-                            </div>
+        // Alert P.IVA
+        if (pivaStatus.percentage >= 90) {
+            alerts.push({
+                type: 'error',
+                icon: 'exclamation-triangle',
+                title: 'Soglia P.IVA Critica',
+                message: `Hai raggiunto il ${pivaStatus.percentage.toFixed(1)}% della soglia P.IVA. Contatta il commercialista immediatamente.`
+            });
+        } else if (pivaStatus.percentage >= 80) {
+            alerts.push({
+                type: 'warning',
+                icon: 'exclamation-triangle',
+                title: 'Attenzione P.IVA',
+                message: `Hai raggiunto il ${pivaStatus.percentage.toFixed(1)}% della soglia P.IVA. Prepara la documentazione.`
+            });
+        }
+
+        // Alert obiettivi mensili
+        if (monthlyGoals.achieved) {
+            alerts.push({
+                type: 'success',
+                icon: 'check-circle',
+                title: 'Obiettivo Mensile Raggiunto!',
+                message: `Complimenti! Hai superato l'obiettivo di ${NumberUtils.formatCurrency(monthlyGoals.target)}.`
+            });
+        }
+
+        // Render alerts
+        if (alerts.length === 0) return '';
+
+        return `
+            <div class="alerts-container">
+                ${alerts.map(alert => `
+                    <div class="alert alert-${alert.type}">
+                        <i class="fas fa-${alert.icon}"></i>
+                        <div class="alert-content">
+                            <div class="alert-title">${alert.title}</div>
+                            <div class="alert-message">${alert.message}</div>
                         </div>
-                        <div class="kpi-value" id="revenue-value">€0.00</div>
-                        <div class="kpi-subtitle">Obiettivo: ${this.formatCurrency(this.dashboardData.targets.monthly)}</div>
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill revenue" id="revenue-progress" style="width: 0%"></div>
-                            </div>
-                            <div class="progress-labels">
-                                <span>0%</span>
-                                <span id="revenue-progress-text">del target</span>
-                            </div>
-                        </div>
-                        <div class="kpi-footer">
-                            <div class="kpi-change neutral" id="revenue-change">
-                                <i class="fas fa-minus"></i>
-                                <span>0%</span>
-                            </div>
-                            <div class="kpi-period">vs mese scorso</div>
-                        </div>
+                        <button class="alert-close" onclick="this.parentElement.remove()">
+                            <i class="fas fa-times"></i>
+                        </button>
                     </div>
-                    
-                    <div class="kpi-card videos" id="videos-card">
-                        <div class="kpi-header">
-                            <span class="kpi-title">Video Pubblicati</span>
-                            <div class="kpi-icon videos">
-                                <i class="fas fa-video"></i>
-                            </div>
-                        </div>
-                        <div class="kpi-value" id="videos-value">0</div>
-                        <div class="kpi-subtitle">Questo mese</div>
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill target" id="videos-progress" style="width: 0%"></div>
-                            </div>
-                            <div class="progress-labels">
-                                <span>Target: 12/mese</span>
-                                <span id="videos-progress-text">0% completato</span>
-                            </div>
-                        </div>
-                        <div class="kpi-footer">
-                            <div class="kpi-change neutral" id="videos-change">
-                                <i class="fas fa-minus"></i>
-                                <span>0%</span>
-                            </div>
-                            <div class="kpi-period">vs mese scorso</div>
-                        </div>
-                    </div>
-                    
-                    <div class="kpi-card views" id="views-card">
-                        <div class="kpi-header">
-                            <span class="kpi-title">Visualizzazioni</span>
-                            <div class="kpi-icon views">
-                                <i class="fas fa-eye"></i>
-                            </div>
-                        </div>
-                        <div class="kpi-value" id="views-value">0</div>
-                        <div class="kpi-subtitle">Totali questo mese</div>
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill target" id="views-progress" style="width: 0%"></div>
-                            </div>
-                            <div class="progress-labels">
-                                <span>Target: 10K/mese</span>
-                                <span id="views-progress-text">0% completato</span>
-                            </div>
-                        </div>
-                        <div class="kpi-footer">
-                            <div class="kpi-change neutral" id="views-change">
-                                <i class="fas fa-minus"></i>
-                                <span>0%</span>
-                            </div>
-                            <div class="kpi-period">vs mese scorso</div>
-                        </div>
-                    </div>
-                    
-                    <div class="kpi-card piva" id="piva-card">
-                        <div class="kpi-header">
-                            <span class="kpi-title">Soglia P.IVA</span>
-                            <div class="kpi-icon piva">
-                                <i class="fas fa-receipt"></i>
-                            </div>
-                        </div>
-                        <div class="kpi-value" id="piva-value">€0</div>
-                        <div class="kpi-subtitle">di ${this.formatCurrency(this.dashboardData.targets.piva)} annui</div>
-                        <div class="progress-container">
-                            <div class="progress-bar">
-                                <div class="progress-fill piva" id="piva-progress" style="width: 0%"></div>
-                            </div>
-                            <div class="progress-labels">
-                                <span id="piva-progress-text">0%</span>
-                                <span>della soglia</span>
-                            </div>
-                        </div>
-                        <div class="kpi-footer">
-                            <div class="kpi-change neutral" id="piva-change">
-                                <i class="fas fa-calendar"></i>
-                                <span id="piva-timeline">Nessun limite</span>
-                            </div>
-                            <div class="kpi-period">proiezione</div>
-                        </div>
-                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Render trend chart container
+     */
+    renderTrendChart(trends) {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-chart-line"></i>
+                        Trend Revenue Ultimi 6 Mesi
+                    </h3>
                 </div>
-                
-                <!-- Main Content Row -->
-                <div class="dashboard-row main-content">
-                    <!-- Revenue Chart -->
-                    <div class="chart-container">
-                        <div class="chart-header">
-                            <h3 class="chart-title">Trend Revenue</h3>
-                            <div class="chart-controls">
-                                <button class="chart-filter" data-period="week">7G</button>
-                                <button class="chart-filter active" data-period="month">30G</button>
-                                <button class="chart-filter" data-period="quarter">3M</button>
-                                <button class="chart-filter" data-period="year">1A</button>
-                            </div>
-                        </div>
-                        <canvas id="revenue-chart" class="chart-canvas"></canvas>
-                    </div>
-                    
-                    <!-- Recent Activity -->
-                    <div class="activity-container">
-                        <div class="activity-header">
-                            <h3 class="activity-title">Attività Recente</h3>
-                            <button class="btn-icon" onclick="DashboardModule.refreshActivity()">
-                                <i class="fas fa-refresh"></i>
-                            </button>
-                        </div>
-                        <ul class="activity-list" id="activity-list">
-                            <li class="activity-item">
-                                <div class="activity-icon revenue">
-                                    <i class="fas fa-plus"></i>
-                                </div>
-                                <div class="activity-content">
-                                    <div class="activity-title-text">Nessuna attività</div>
-                                    <div class="activity-description">Inizia aggiungendo la tua prima entrata</div>
-                                </div>
-                                <div class="activity-meta">
-                                    <div class="activity-time">Ora</div>
-                                </div>
-                            </li>
-                        </ul>
-                    </div>
+                <div class="card-body">
+                    <canvas id="trendChart" width="400" height="200"></canvas>
                 </div>
-                
-                <!-- Secondary Content Row -->
-                <div class="dashboard-row secondary-content">
-                    <!-- Platform Performance -->
-                    <div class="chart-container">
-                        <div class="chart-header">
-                            <h3 class="chart-title">Performance Piattaforme</h3>
-                            <div class="chart-controls">
-                                <button class="chart-filter active" data-chart="platforms">Revenue</button>
-                                <button class="chart-filter" data-chart="views">Views</button>
-                            </div>
-                        </div>
-                        <canvas id="platforms-chart" class="chart-canvas"></canvas>
-                    </div>
-                    
-                    <!-- Quick Actions -->
+            </div>
+        `;
+    }
+
+    /**
+     * Render quick actions
+     */
+    renderQuickActions() {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-plus-circle"></i>
+                        Azioni Rapide
+                    </h3>
+                </div>
+                <div class="card-body">
                     <div class="quick-actions">
-                        <div class="quick-actions-header">
-                            <h3 class="quick-actions-title">Azioni Rapide</h3>
-                            <p style="font-size: 0.875rem; color: var(--text-muted);">Operazioni frequenti</p>
-                        </div>
-                        <div class="quick-actions-grid">
-                            <button class="quick-action-btn" onclick="DashboardModule.openAddRevenue()">
-                                <div class="quick-action-icon">
-                                    <i class="fas fa-plus"></i>
-                                </div>
-                                <span class="quick-action-text">Aggiungi Entrata</span>
-                            </button>
-                            
-                            <button class="quick-action-btn" onclick="DashboardModule.openAddVideo()">
-                                <div class="quick-action-icon">
-                                    <i class="fas fa-video"></i>
-                                </div>
-                                <span class="quick-action-text">Nuovo Video</span>
-                            </button>
-                            
-                            <button class="quick-action-btn" onclick="DashboardModule.openReports()">
-                                <div class="quick-action-icon">
-                                    <i class="fas fa-chart-bar"></i>
-                                </div>
-                                <span class="quick-action-text">Genera Report</span>
-                            </button>
-                            
-                            <button class="quick-action-btn" onclick="DashboardModule.exportData()">
-                                <div class="quick-action-icon">
-                                    <i class="fas fa-download"></i>
-                                </div>
-                                <span class="quick-action-text">Export CSV</span>
-                            </button>
-                        </div>
+                        <button class="btn-primary" onclick="Dashboard.showAddRevenueModal()">
+                            <i class="fas fa-euro-sign"></i>
+                            Aggiungi Entrata
+                        </button>
+                        <button class="btn-secondary" onclick="Dashboard.exportData()">
+                            <i class="fas fa-download"></i>
+                            Esporta Dati
+                        </button>
+                        <button class="btn-secondary" onclick="DB.createBackup()">
+                            <i class="fas fa-shield-alt"></i>
+                            Backup
+                        </button>
                     </div>
                 </div>
             </div>
@@ -316,766 +246,607 @@ class DashboardModule {
     }
 
     /**
-     * Load dashboard data from database
+     * Render platform breakdown
      */
-    async loadDashboardData() {
-        try {
-            // Show loading
-            this.showLoading();
-
-            // Load revenue data
-            await this.loadRevenueData();
-
-            // Load video data
-            await this.loadVideoData();
-
-            // Load streaming data
-            await this.loadStreamingData();
-
-            // Load recent activity
-            await this.loadRecentActivity();
-
-            // Update UI
-            this.updateKPICards();
-            this.updateCharts();
-            this.updateAlerts();
-
-            // Hide loading
-            this.hideLoading();
-
-        } catch (error) {
-            console.error('❌ Failed to load dashboard data:', error);
-            this.showError('Errore caricamento dati dashboard');
-        }
-    }
-
-    /**
-     * Load revenue data
-     */
-    async loadRevenueData() {
-        const now = new Date();
-        const ranges = {
-            today: window.Utils.getDateRange('today'),
-            week: window.Utils.getDateRange('week'),
-            month: window.Utils.getDateRange('month'),
-            year: window.Utils.getDateRange('year')
-        };
-
-        // Get all revenue records
-        const allRevenue = await window.DB.getAll('revenue');
-
-        // Calculate totals for each period
-        this.dashboardData.revenue = {
-            today: this.calculatePeriodRevenue(allRevenue, ranges.today),
-            week: this.calculatePeriodRevenue(allRevenue, ranges.week),
-            month: this.calculatePeriodRevenue(allRevenue, ranges.month),
-            year: this.calculatePeriodRevenue(allRevenue, ranges.year),
-            growth: 0 // Will calculate vs previous month
-        };
-
-        // Calculate growth vs previous month
-        const prevMonth = window.Utils.getDateRange('month');
-        prevMonth.start.setMonth(prevMonth.start.getMonth() - 1);
-        prevMonth.end.setMonth(prevMonth.end.getMonth() - 1);
-
-        const prevMonthRevenue = this.calculatePeriodRevenue(allRevenue, prevMonth);
-        this.dashboardData.revenue.growth = window.Utils.calculatePercentageChange(
-            prevMonthRevenue,
-            this.dashboardData.revenue.month
-        );
-    }
-
-    /**
-     * Load video data
-     */
-    async loadVideoData() {
-        const ranges = {
-            month: window.Utils.getDateRange('month')
-        };
-
-        // Get all video records
-        const allVideos = await window.DB.getAll('videos');
-
-        // Filter videos for current month
-        const monthVideos = allVideos.filter(video =>
-            window.Utils.isDateInRange(video.publishDate, ranges.month)
-        );
-
-        // Calculate totals
-        this.dashboardData.videos = {
-            total: allVideos.length,
-            published: monthVideos.length,
-            views: monthVideos.reduce((sum, video) => sum + (video.views || 0), 0),
-            growth: 0 // Will calculate vs previous month
-        };
-
-        // Calculate growth vs previous month
-        const prevMonth = window.Utils.getDateRange('month');
-        prevMonth.start.setMonth(prevMonth.start.getMonth() - 1);
-        prevMonth.end.setMonth(prevMonth.end.getMonth() - 1);
-
-        const prevMonthVideos = allVideos.filter(video =>
-            window.Utils.isDateInRange(video.publishDate, prevMonth)
-        );
-
-        this.dashboardData.videos.growth = window.Utils.calculatePercentageChange(
-            prevMonthVideos.length,
-            this.dashboardData.videos.published
-        );
-    }
-
-    /**
-     * Load streaming data
-     */
-    async loadStreamingData() {
-        const ranges = {
-            month: window.Utils.getDateRange('month')
-        };
-
-        // Get all streaming records
-        const allStreaming = await window.DB.getAll('streaming');
-
-        // Filter for current month
-        const monthStreaming = allStreaming.filter(stream =>
-            window.Utils.isDateInRange(stream.date, ranges.month)
-        );
-
-        // Calculate totals
-        this.dashboardData.streaming = {
-            plays: monthStreaming.reduce((sum, stream) => sum + (stream.streams || 0), 0),
-            listeners: monthStreaming.reduce((sum, stream) => sum + (stream.listeners || 0), 0),
-            revenue: monthStreaming.reduce((sum, stream) => sum + (stream.revenue || 0), 0),
-            growth: 0
-        };
-    }
-
-    /**
-     * Load recent activity
-     */
-    async loadRecentActivity() {
-        const activities = [];
-
-        // Get recent revenue entries
-        const recentRevenue = await window.DB.query('revenue', {}, {
-            sortBy: 'createdAt',
-            sortOrder: 'desc',
-            limit: 5
-        });
-
-        recentRevenue.forEach(rev => {
-            activities.push({
-                type: 'revenue',
-                title: `Entrata ${rev.platform}`,
-                description: `${this.formatCurrency(rev.amount)} - ${rev.notes || 'Nessuna nota'}`,
-                amount: rev.amount,
-                time: rev.createdAt,
-                icon: 'fas fa-euro-sign'
-            });
-        });
-
-        // Get recent video uploads
-        const recentVideos = await window.DB.query('videos', {}, {
-            sortBy: 'createdAt',
-            sortOrder: 'desc',
-            limit: 3
-        });
-
-        recentVideos.forEach(video => {
-            activities.push({
-                type: 'video',
-                title: `Video pubblicato`,
-                description: window.Utils.truncate(video.title, 40),
-                amount: video.revenue || 0,
-                time: video.createdAt,
-                icon: 'fas fa-video'
-            });
-        });
-
-        // Sort by time and take top 8
-        this.dashboardData.recentActivity = activities
-            .sort((a, b) => new Date(b.time) - new Date(a.time))
-            .slice(0, 8);
-    }
-
-    /**
-     * Calculate revenue for a specific period
-     */
-    calculatePeriodRevenue(revenueData, range) {
-        return revenueData
-            .filter(rev => window.Utils.isDateInRange(rev.date, range))
-            .reduce((sum, rev) => sum + (rev.amount || 0), 0);
-    }
-
-    /**
-     * Update KPI cards
-     */
-    updateKPICards() {
-        // Revenue card
-        const revenueValue = document.getElementById('revenue-value');
-        const revenueProgress = document.getElementById('revenue-progress');
-        const revenueProgressText = document.getElementById('revenue-progress-text');
-        const revenueChange = document.getElementById('revenue-change');
-
-        if (revenueValue) {
-            revenueValue.textContent = this.formatCurrency(this.dashboardData.revenue.month);
-
-            const progressPercent = Math.min(
-                (this.dashboardData.revenue.month / this.dashboardData.targets.monthly) * 100,
-                100
-            );
-            revenueProgress.style.width = `${progressPercent}%`;
-            revenueProgressText.textContent = `${Math.round(progressPercent)}% del target`;
-
-            this.updateChangeIndicator(revenueChange, this.dashboardData.revenue.growth);
-        }
-
-        // Videos card
-        const videosValue = document.getElementById('videos-value');
-        const videosProgress = document.getElementById('videos-progress');
-        const videosProgressText = document.getElementById('videos-progress-text');
-        const videosChange = document.getElementById('videos-change');
-
-        if (videosValue) {
-            videosValue.textContent = this.dashboardData.videos.published;
-
-            const progressPercent = Math.min((this.dashboardData.videos.published / 12) * 100, 100);
-            videosProgress.style.width = `${progressPercent}%`;
-            videosProgressText.textContent = `${Math.round(progressPercent)}% completato`;
-
-            this.updateChangeIndicator(videosChange, this.dashboardData.videos.growth);
-        }
-
-        // Views card
-        const viewsValue = document.getElementById('views-value');
-        const viewsProgress = document.getElementById('views-progress');
-        const viewsProgressText = document.getElementById('views-progress-text');
-        const viewsChange = document.getElementById('views-change');
-
-        if (viewsValue) {
-            viewsValue.textContent = window.Utils.formatNumber(this.dashboardData.videos.views);
-
-            const progressPercent = Math.min((this.dashboardData.videos.views / 10000) * 100, 100);
-            viewsProgress.style.width = `${progressPercent}%`;
-            viewsProgressText.textContent = `${Math.round(progressPercent)}% completato`;
-
-            this.updateChangeIndicator(viewsChange, 0); // Placeholder
-        }
-
-        // P.IVA card
-        const pivaValue = document.getElementById('piva-value');
-        const pivaProgress = document.getElementById('piva-progress');
-        const pivaProgressText = document.getElementById('piva-progress-text');
-        const pivaChange = document.getElementById('piva-change');
-        const pivaCard = document.getElementById('piva-card');
-
-        if (pivaValue) {
-            pivaValue.textContent = this.formatCurrency(this.dashboardData.revenue.year);
-
-            const progressPercent = (this.dashboardData.revenue.year / this.dashboardData.targets.piva) * 100;
-            pivaProgress.style.width = `${Math.min(progressPercent, 100)}%`;
-            pivaProgressText.textContent = `${Math.round(progressPercent)}%`;
-
-            // Update warning state
-            if (progressPercent >= 80) {
-                pivaCard.classList.add('warning');
-            } else {
-                pivaCard.classList.remove('warning');
-            }
-
-            // Calculate timeline to threshold
-            const monthsRemaining = 12 - new Date().getMonth();
-            const projectedYearRevenue = this.dashboardData.revenue.year +
-                (this.dashboardData.revenue.month * monthsRemaining);
-
-            if (projectedYearRevenue >= this.dashboardData.targets.piva) {
-                const monthsToThreshold = Math.ceil(
-                    (this.dashboardData.targets.piva - this.dashboardData.revenue.year) /
-                    this.dashboardData.revenue.month
-                );
-                pivaChange.innerHTML = `<i class="fas fa-exclamation-triangle"></i><span>${monthsToThreshold} mesi alla soglia</span>`;
-            } else {
-                pivaChange.innerHTML = `<i class="fas fa-check"></i><span>Sotto soglia</span>`;
-            }
-        }
-    }
-
-    /**
-     * Update change indicator
-     */
-    updateChangeIndicator(element, changePercent) {
-        if (!element) return;
-
-        element.className = 'kpi-change';
-
-        if (changePercent > 0) {
-            element.classList.add('positive');
-            element.innerHTML = `<i class="fas fa-arrow-up"></i><span>+${Math.round(changePercent)}%</span>`;
-        } else if (changePercent < 0) {
-            element.classList.add('negative');
-            element.innerHTML = `<i class="fas fa-arrow-down"></i><span>${Math.round(changePercent)}%</span>`;
-        } else {
-            element.classList.add('neutral');
-            element.innerHTML = `<i class="fas fa-minus"></i><span>0%</span>`;
-        }
-    }
-
-    /**
-     * Update charts
-     */
-    updateCharts() {
-        this.updateRevenueChart();
-        this.updatePlatformsChart();
-    }
-
-    /**
-     * Update revenue trend chart
-     */
-    async updateRevenueChart() {
-        const canvas = document.getElementById('revenue-chart');
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-
-        // Destroy existing chart
-        if (this.charts.revenue) {
-            this.charts.revenue.destroy();
-        }
-
-        // Get revenue data for the selected period
-        const chartData = await this.getRevenueChartData(this.currentPeriod);
-
-        this.charts.revenue = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: chartData.labels,
-                datasets: [{
-                    label: 'Revenue',
-                    data: chartData.values,
-                    borderColor: 'rgb(59, 130, 246)',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: 'rgb(59, 130, 246)',
-                    pointBorderColor: '#fff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 15, 35, 0.9)',
-                        titleColor: '#f8fafc',
-                        bodyColor: '#f8fafc',
-                        borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 1,
-                        callbacks: {
-                            label: (context) => `Revenue: ${this.formatCurrency(context.parsed.y)}`
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: {
-                            color: 'rgba(100, 116, 139, 0.3)'
-                        },
-                        ticks: {
-                            color: '#f8fafc'
-                        }
-                    },
-                    y: {
-                        grid: {
-                            color: 'rgba(100, 116, 139, 0.3)'
-                        },
-                        ticks: {
-                            color: '#f8fafc',
-                            callback: (value) => this.formatCurrency(value)
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /**
-     * Update platforms chart
-     */
-    async updatePlatformsChart() {
-        const canvas = document.getElementById('platforms-chart');
-        if (!canvas) return;
-
-        const ctx = canvas.getContext('2d');
-
-        // Destroy existing chart
-        if (this.charts.platforms) {
-            this.charts.platforms.destroy();
-        }
-
-        // Get platform data
-        const platformData = await this.getPlatformChartData();
-
-        this.charts.platforms = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: platformData.labels,
-                datasets: [{
-                    data: platformData.values,
-                    backgroundColor: [
-                        '#FF0000', // YouTube
-                        '#1DB954', // Spotify
-                        '#000000', // Apple Music
-                        '#FF9900', // Amazon
-                        '#7B68EE', // DistroKid
-                        '#6B7280'  // Others
-                    ],
-                    borderWidth: 2,
-                    borderColor: 'var(--primary-bg)'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            color: '#f8fafc',
-                            padding: 20,
-                            usePointStyle: true,
-                            font: {
-                                size: 12
-                            }
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(15, 15, 35, 0.9)',
-                        titleColor: '#f8fafc',
-                        bodyColor: '#f8fafc',
-                        borderColor: 'rgb(59, 130, 246)',
-                        borderWidth: 1,
-                        callbacks: {
-                            label: (context) => {
-                                const label = context.label;
-                                const value = this.formatCurrency(context.parsed);
-                                const percentage = ((context.parsed / platformData.total) * 100).toFixed(1);
-                                return `${label}: ${value} (${percentage}%)`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    /**
-     * Get revenue chart data for period
-     */
-    async getRevenueChartData(period) {
-        const allRevenue = await window.DB.getAll('revenue');
-        const range = window.Utils.getDateRange(period);
-
-        // Filter data for period
-        const periodRevenue = allRevenue.filter(rev =>
-            window.Utils.isDateInRange(rev.date, range)
-        );
-
-        // Group by date and sum amounts
-        const grouped = window.Utils.groupBy(periodRevenue, 'date');
-        const chartData = Object.keys(grouped)
-            .sort()
-            .map(date => ({
-                date,
-                amount: grouped[date].reduce((sum, rev) => sum + rev.amount, 0)
-            }));
-
-        return {
-            labels: chartData.map(item => window.Utils.formatDate(item.date, 'short')),
-            values: chartData.map(item => item.amount)
-        };
-    }
-
-    /**
-     * Get platform chart data
-     */
-    async getPlatformChartData() {
-        const allRevenue = await window.DB.getAll('revenue');
-        const range = window.Utils.getDateRange('month');
-
-        // Filter for current month
-        const monthRevenue = allRevenue.filter(rev =>
-            window.Utils.isDateInRange(rev.date, range)
-        );
-
-        // Group by platform
-        const platforms = window.Utils.groupBy(monthRevenue, 'platform');
-        const platformTotals = Object.keys(platforms).map(platform => ({
-            platform,
-            amount: platforms[platform].reduce((sum, rev) => sum + rev.amount, 0)
-        }));
-
-        // Sort by amount
-        platformTotals.sort((a, b) => b.amount - a.amount);
-
-        const total = platformTotals.reduce((sum, p) => sum + p.amount, 0);
-
-        return {
-            labels: platformTotals.map(p => p.platform),
-            values: platformTotals.map(p => p.amount),
-            total
-        };
-    }
-
-    /**
-     * Update alerts
-     */
-    updateAlerts() {
-        const alertsContainer = document.getElementById('dashboard-alerts');
-        if (!alertsContainer) return;
-
-        const alerts = [];
-
-        // P.IVA threshold warning
-        const pivaPercent = (this.dashboardData.revenue.year / this.dashboardData.targets.piva) * 100;
-        if (pivaPercent >= 80) {
-            alerts.push({
-                type: 'warning',
-                title: 'Attenzione Soglia P.IVA',
-                message: `Hai raggiunto il ${Math.round(pivaPercent)}% della soglia P.IVA annuale. Considera l'apertura della Partita IVA.`,
-                actions: [
-                    { text: 'Apri Impostazioni', action: 'openSettings()' },
-                    { text: 'Nascondi', action: 'dismissAlert(this)' }
-                ]
-            });
-        }
-
-        // Monthly target progress
-        const monthPercent = (this.dashboardData.revenue.month / this.dashboardData.targets.monthly) * 100;
-        if (monthPercent >= 100) {
-            alerts.push({
-                type: 'success',
-                title: 'Obiettivo Mensile Raggiunto!',
-                message: `Complimenti! Hai superato il target mensile di ${this.formatCurrency(this.dashboardData.targets.monthly)}.`,
-                actions: [
-                    { text: 'Vedi Report', action: 'openReports()' }
-                ]
-            });
-        } else if (monthPercent < 50 && new Date().getDate() > 15) {
-            alerts.push({
-                type: 'info',
-                title: 'Target Mensile in Ritardo',
-                message: `Sei al ${Math.round(monthPercent)}% del target mensile. Considera di aumentare la frequenza di upload.`,
-                actions: [
-                    { text: 'Piano Contenuti', action: 'openCalendar()' }
-                ]
-            });
-        }
-
-        // Render alerts
-        alertsContainer.innerHTML = alerts.map(alert => `
-            <div class="alert ${alert.type}">
-                <i class="alert-icon ${this.getAlertIcon(alert.type)}"></i>
-                <div class="alert-content">
-                    <div class="alert-title">${alert.title}</div>
-                    <div class="alert-message">${alert.message}</div>
+    renderPlatformBreakdown(platformData) {
+        const platforms = Object.entries(platformData)
+            .sort((a, b) => b[1].revenue - a[1].revenue)
+            .slice(0, 5); // Top 5 platforms
+
+        const totalRevenue = platforms.reduce((sum, [, data]) => sum + data.revenue, 0);
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-chart-pie"></i>
+                        Top Piattaforme
+                    </h3>
                 </div>
-                <div class="alert-actions">
-                    ${alert.actions.map(action => `
-                        <button class="alert-btn primary" onclick="${action.action}">${action.text}</button>
-                    `).join('')}
+                <div class="card-body">
+                    <div class="platform-list">
+                        ${platforms.map(([platform, data]) => {
+            const percentage = totalRevenue > 0 ? (data.revenue / totalRevenue) * 100 : 0;
+            return `
+                                <div class="platform-item">
+                                    <div class="platform-info">
+                                        <span class="platform-name">${platform}</span>
+                                        <span class="platform-revenue">${NumberUtils.formatCurrency(data.revenue)}</span>
+                                    </div>
+                                    <div class="platform-progress">
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                                        </div>
+                                        <span class="progress-percentage">${percentage.toFixed(1)}%</span>
+                                    </div>
+                                    <div class="platform-details">
+                                        ${data.entries} entrate • Media: ${NumberUtils.formatCurrency(data.revenue / data.entries)}
+                                    </div>
+                                </div>
+                            `;
+        }).join('')}
+                    </div>
+                    ${platforms.length === 0 ? '<p class="text-muted">Nessuna entrata registrata</p>' : ''}
                 </div>
             </div>
-        `).join('');
+        `;
     }
 
     /**
-     * Get alert icon class
+     * Render recent entries
      */
-    getAlertIcon(type) {
-        const icons = {
-            success: 'fas fa-check-circle',
-            warning: 'fas fa-exclamation-triangle',
-            danger: 'fas fa-exclamation-circle',
-            info: 'fas fa-info-circle'
-        };
-        return icons[type] || icons.info;
+    renderRecentEntries() {
+        const recentEntries = DB.getAllRevenue()
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .slice(0, 5);
+
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <i class="fas fa-clock"></i>
+                        Entrate Recenti
+                    </h3>
+                    <a href="#" onclick="app.showSection('revenue')" class="card-action">
+                        Vedi tutte <i class="fas fa-arrow-right"></i>
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="recent-entries">
+                        ${recentEntries.map(entry => `
+                            <div class="recent-entry">
+                                <div class="entry-main">
+                                    <span class="entry-platform">${entry.platform}</span>
+                                    <span class="entry-amount">${NumberUtils.formatCurrency(entry.amount)}</span>
+                                </div>
+                                <div class="entry-details">
+                                    <span class="entry-date">${DateUtils.formatDate(entry.date)}</span>
+                                    ${entry.videoTitle ? `<span class="entry-video">${entry.videoTitle}</span>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${recentEntries.length === 0 ? '<p class="text-muted">Nessuna entrata registrata</p>' : ''}
+                </div>
+            </div>
+        `;
     }
 
     /**
-     * Update recent activity list
+     * Render grafici con Chart.js
      */
-    updateRecentActivity() {
-        const activityList = document.getElementById('activity-list');
-        if (!activityList) return;
+    renderCharts(trends, platformData) {
+        this.renderTrendLineChart(trends);
+    }
 
-        if (this.dashboardData.recentActivity.length === 0) {
-            activityList.innerHTML = `
-                <li class="activity-item">
-                    <div class="activity-icon revenue">
-                        <i class="fas fa-plus"></i>
-                    </div>
-                    <div class="activity-content">
-                        <div class="activity-title-text">Nessuna attività</div>
-                        <div class="activity-description">Inizia aggiungendo la tua prima entrata</div>
-                    </div>
-                    <div class="activity-meta">
-                        <div class="activity-time">Ora</div>
-                    </div>
-                </li>
-            `;
-            return;
+    /**
+     * Render line chart trends
+     */
+    renderTrendLineChart(trends) {
+        const canvas = document.getElementById('trendChart');
+        if (!canvas) return;
+
+        const ctx = canvas.getContext('2d');
+
+        // Pulisce canvas precedente
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Dati ultimi 6 mesi
+        const last6Months = trends.slice(-6);
+        const labels = last6Months.map(item => item.month);
+        const data = last6Months.map(item => item.revenue);
+
+        // Simple line chart implementation
+        this.drawLineChart(ctx, canvas, labels, data);
+    }
+
+    /**
+     * Disegna line chart semplice
+     */
+    drawLineChart(ctx, canvas, labels, data) {
+        const paddingLeft = 80; // Più spazio per numeri currency
+        const paddingRight = 20;
+        const paddingTop = 20;
+        const paddingBottom = 40;
+        const width = canvas.width - paddingLeft - paddingRight;
+        const height = canvas.height - paddingTop - paddingBottom;
+
+        // Colori
+        ctx.strokeStyle = '#2ea043';
+        ctx.fillStyle = '#2ea043';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+
+        // Trova min/max per scaling
+        const maxValue = Math.max(...data, 0);
+        const minValue = Math.min(...data, 0);
+        const range = maxValue - minValue || 1;
+
+        // Disegna assi
+        ctx.strokeStyle = '#30363d';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        // Asse X
+        ctx.moveTo(paddingLeft, height + paddingTop);
+        ctx.lineTo(width + paddingLeft, height + paddingTop);
+        // Asse Y
+        ctx.moveTo(paddingLeft, paddingTop);
+        ctx.lineTo(paddingLeft, height + paddingTop);
+        ctx.stroke();
+
+        // Disegna etichette X
+        ctx.fillStyle = '#8b949e';
+        ctx.textAlign = 'center';
+        labels.forEach((label, index) => {
+            const x = paddingLeft + (width / (labels.length - 1)) * index;
+            ctx.fillText(label, x, height + paddingTop + 25);
+        });
+
+        // Disegna linea dati
+        if (data.length > 1) {
+            ctx.strokeStyle = '#2ea043';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+
+            data.forEach((value, index) => {
+                const x = paddingLeft + (width / (data.length - 1)) * index;
+                const y = paddingTop + height - ((value - minValue) / range) * height;
+
+                if (index === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+
+            ctx.stroke();
+
+            // Disegna punti
+            ctx.fillStyle = '#2ea043';
+            data.forEach((value, index) => {
+                const x = paddingLeft + (width / (data.length - 1)) * index;
+                const y = paddingTop + height - ((value - minValue) / range) * height;
+
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, 2 * Math.PI);
+                ctx.fill();
+            });
         }
 
-        activityList.innerHTML = this.dashboardData.recentActivity.map(activity => `
-            <li class="activity-item">
-                <div class="activity-icon ${activity.type}">
-                    <i class="${activity.icon}"></i>
-                </div>
-                <div class="activity-content">
-                    <div class="activity-title-text">${activity.title}</div>
-                    <div class="activity-description">${activity.description}</div>
-                </div>
-                <div class="activity-meta">
-                    <div class="activity-time">${window.Utils.getRelativeTime(activity.time)}</div>
-                    ${activity.amount > 0 ? `<div class="activity-amount">${this.formatCurrency(activity.amount)}</div>` : ''}
-                </div>
-            </li>
-        `).join('');
+        // Etichette valori Y (con più spazio)
+        ctx.fillStyle = '#8b949e';
+        ctx.textAlign = 'right';
+        ctx.font = '11px Arial';
+        for (let i = 0; i <= 5; i++) {
+            const value = minValue + (range / 5) * i;
+            const y = paddingTop + height - (i / 5) * height;
+            const formattedValue = value < 10 ?
+                NumberUtils.formatCurrency(value) :
+                `€${value.toFixed(0)}`;
+            ctx.fillText(formattedValue, paddingLeft - 10, y + 4);
+        }
     }
 
     /**
-     * Setup event listeners
+     * Mostra modal aggiungi entrata
      */
-    setupEventListeners() {
-        // Chart period filters
+    showAddRevenueModal() {
+        const modal = document.getElementById('modal-container');
+        if (!modal) return;
+
+        modal.innerHTML = `
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 class="modal-title">Aggiungi Nuova Entrata</h3>
+                    <button class="modal-close" onclick="this.closest('.modal-container').classList.remove('active')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="addRevenueForm">
+                        <div class="form-group">
+                            <label class="form-label">Data *</label>
+                            <input type="date" class="form-input" name="date" 
+                                   value="${DateUtils.formatDateForInput(new Date())}" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Piattaforma *</label>
+                            <select class="form-select" name="platform" required>
+                                <option value="">Seleziona piattaforma</option>
+                                <option value="YouTube AdSense">YouTube AdSense</option>
+                                <option value="YouTube Music">YouTube Music</option>
+                                <option value="Spotify">Spotify</option>
+                                <option value="Apple Music">Apple Music</option>
+                                <option value="Amazon Music">Amazon Music</option>
+                                <option value="Altre piattaforme">Altre piattaforme</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Importo (€) *</label>
+                            <input type="number" class="form-input" name="amount" 
+                                   step="0.01" min="0" placeholder="0.00" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Video/Track</label>
+                            <input type="text" class="form-input" name="videoTitle" 
+                                   placeholder="Titolo del video o traccia">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Note</label>
+                            <textarea class="form-textarea" name="notes" 
+                                      placeholder="Note aggiuntive..."></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" 
+                            onclick="this.closest('.modal-container').classList.remove('active')">
+                        Annulla
+                    </button>
+                    <button type="submit" class="btn-primary" 
+                            onclick="Dashboard.submitAddRevenue(event)">
+                        <i class="fas fa-plus"></i> Aggiungi Entrata
+                    </button>
+                </div>
+            </div>
+        `;
+
+        modal.classList.add('active');
+    }
+
+    /**
+     * Submit form aggiungi entrata
+     */
+    submitAddRevenue(event) {
+        event.preventDefault();
+
+        const form = document.getElementById('addRevenueForm');
+        if (!form) return;
+
+        const formData = new FormData(form);
+        const revenueData = {
+            date: formData.get('date'),
+            platform: formData.get('platform'),
+            amount: formData.get('amount'),
+            videoTitle: formData.get('videoTitle'),
+            notes: formData.get('notes')
+        };
+
+        const result = DB.addRevenue(revenueData);
+        if (result) {
+            // Chiudi modal
+            document.getElementById('modal-container').classList.remove('active');
+
+            // Refresh dashboard
+            this.render();
+        }
+    }
+
+    /**
+     * Esporta dati dashboard
+     */
+    exportData() {
+        const stats = DB.getRevenueStats();
+        const trends = DB.getMonthlyTrends();
+        const currentMonth = DB.getCurrentMonthRevenue();
+
+        const exportData = {
+            generatedAt: new Date().toISOString(),
+            stats: stats,
+            trends: trends,
+            currentMonthEntries: currentMonth
+        };
+
+        const filename = `dashboard-report-${DateUtils.formatDate(new Date()).replace(/\//g, '-')}.json`;
+        ExportUtils.exportJSON(exportData, filename);
+    }
+
+    /**
+     * Render errore
+     */
+    renderError() {
+        this.container.innerHTML = `
+            <div class="card">
+                <div class="card-body text-center">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 3rem; color: var(--accent-danger); margin-bottom: 1rem;"></i>
+                    <h3>Errore Caricamento Dashboard</h3>
+                    <p class="text-muted">Si è verificato un errore durante il caricamento della dashboard.</p>
+                    <button class="btn-primary" onclick="Dashboard.render()">
+                        <i class="fas fa-refresh"></i> Riprova
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Bind eventi
+     */
+    bindEvents() {
+        // Quick action buttons
         document.addEventListener('click', (e) => {
-            if (e.target.closest('.chart-filter')) {
-                const filter = e.target.closest('.chart-filter');
-                const period = filter.dataset.period;
-
-                if (period) {
-                    // Update active state
-                    document.querySelectorAll('.chart-filter').forEach(f => f.classList.remove('active'));
-                    filter.classList.add('active');
-
-                    // Update chart
-                    this.currentPeriod = period;
-                    this.updateRevenueChart();
-                }
+            if (e.target.id === 'addRevenueQuick') {
+                this.showAddRevenueModal();
             }
         });
     }
 
     /**
-     * Setup real-time updates
+     * Auto-refresh dashboard
      */
-    setupRealTimeUpdates() {
-        // Refresh every 30 seconds
+    startAutoRefresh() {
+        // Refresh ogni 30 secondi
         this.refreshInterval = setInterval(() => {
-            this.refreshData();
+            this.render();
         }, 30000);
-
-        // Listen for data changes
-        window.addEventListener('dataUpdated', () => {
-            this.refreshData();
-        });
     }
 
     /**
-     * Refresh dashboard data
+     * Stop auto-refresh
      */
-    async refreshData() {
-        try {
-            await this.loadDashboardData();
-            this.updateRecentActivity();
-        } catch (error) {
-            console.error('❌ Failed to refresh dashboard data:', error);
-        }
-    }
-
-    /**
-     * Utility functions
-     */
-    formatCurrency(amount) {
-        return window.Utils.formatCurrency(amount, this.currency);
-    }
-
-    showLoading() {
-        // Implementation for loading state
-    }
-
-    hideLoading() {
-        // Implementation for hiding loading state
-    }
-
-    showError(message) {
-        if (window.App) {
-            window.App.showNotification(message, 'error');
-        }
-    }
-
-    /**
-     * Quick action handlers
-     */
-    static openAddRevenue() {
-        window.App?.navigateToSection('revenue');
-        // TODO: Open add revenue modal
-    }
-
-    static openAddVideo() {
-        window.App?.navigateToSection('videos');
-        // TODO: Open add video modal
-    }
-
-    static openReports() {
-        window.App?.navigateToSection('reports');
-    }
-
-    static openCalendar() {
-        window.App?.navigateToSection('calendar');
-    }
-
-    static exportData() {
-        // TODO: Export CSV functionality
-        window.App?.showNotification('Export CSV in arrivo!', 'info');
-    }
-
-    static refreshActivity() {
-        const instance = window.DashboardModule;
-        if (instance) {
-            instance.refreshData();
-        }
-    }
-
-    /**
-     * Cleanup
-     */
-    destroy() {
+    stopAutoRefresh() {
         if (this.refreshInterval) {
             clearInterval(this.refreshInterval);
+            this.refreshInterval = null;
         }
+    }
 
-        // Destroy charts
-        Object.values(this.charts).forEach(chart => {
-            if (chart) chart.destroy();
-        });
-
-        this.isInitialized = false;
+    /**
+     * Cleanup quando si cambia sezione
+     */
+    cleanup() {
+        this.stopAutoRefresh();
     }
 }
 
-// Create global instance
-window.DashboardModule = new DashboardModule();
+// CSS aggiuntivo per dashboard components
+const dashboardCSS = `
+<style>
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-xl);
+}
 
-// Auto-initialize when app loads
-document.addEventListener('DOMContentLoaded', () => {
-    if (window.App?.currentSection === 'dashboard') {
-        window.DashboardModule.init();
+.stat-progress {
+    margin-top: var(--spacing-sm);
+}
+
+.progress-bar {
+    height: 8px;
+    background-color: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: var(--spacing-xs);
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: var(--accent-primary);
+    transition: width 0.3s ease;
+}
+
+.progress-fill.warning {
+    background-color: var(--accent-warning);
+}
+
+.progress-text {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.stat-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    margin-top: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.alerts-container {
+    margin-bottom: var(--spacing-xl);
+}
+
+.alert {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    border-radius: 8px;
+    margin-bottom: var(--spacing-md);
+    border-left: 4px solid;
+}
+
+.alert-success {
+    background-color: rgba(46, 160, 67, 0.1);
+    border-left-color: var(--accent-primary);
+}
+
+.alert-warning {
+    background-color: rgba(210, 153, 34, 0.1);
+    border-left-color: var(--accent-warning);
+}
+
+.alert-error {
+    background-color: rgba(218, 54, 51, 0.1);
+    border-left-color: var(--accent-danger);
+}
+
+.alert-content {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: 600;
+    margin-bottom: var(--spacing-xs);
+}
+
+.alert-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-xl);
+}
+
+.quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.platform-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.platform-item {
+    padding: var(--spacing-md);
+    background-color: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.platform-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+}
+
+.platform-name {
+    font-weight: 500;
+}
+
+.platform-revenue {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.platform-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.platform-progress .progress-bar {
+    flex: 1;
+    margin: 0;
+}
+
+.progress-percentage {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    min-width: 40px;
+    text-align: right;
+}
+
+.platform-details {
+    font-size: var(--font-size-sm);
+    color: var(--text-muted);
+}
+
+.recent-entries {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.recent-entry {
+    padding: var(--spacing-md);
+    background-color: var(--bg-tertiary);
+    border-radius: 6px;
+}
+
+.entry-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-xs);
+}
+
+.entry-platform {
+    font-weight: 500;
+}
+
+.entry-amount {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.entry-details {
+    display: flex;
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+
+.entry-video {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.card-action {
+    color: var(--accent-primary);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+@media (max-width: 768px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
     }
-});
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+`;
+
+// Inject CSS
+document.head.insertAdjacentHTML('beforeend', dashboardCSS);
+
+// Inizializza dashboard globale
+const Dashboard = new DashboardManager();
+
+// Export per uso globale
+window.Dashboard = Dashboard;

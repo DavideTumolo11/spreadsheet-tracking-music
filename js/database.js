@@ -1,726 +1,587 @@
 /**
- * MUSIC BUSINESS TRACKER - DATABASE MANAGER
- * LocalStorage + IndexedDB management for data persistence
+ * 🗄️ MUSIC BUSINESS TRACKER - DATABASE.JS
+ * Sistema di gestione dati con localStorage
  */
 
+// === CONFIGURAZIONE DATABASE ===
+const DB_CONFIG = {
+    version: '1.0.0',
+    keys: {
+        revenue: 'mbt_revenue_data',
+        settings: 'mbt_settings',
+        metadata: 'mbt_metadata'
+    },
+    defaults: {
+        settings: {
+            pivaThreshold: 5000,
+            monthlyTarget: 165,
+            currency: 'EUR',
+            dateFormat: 'DD/MM/YYYY',
+            theme: 'dark'
+        }
+    }
+};
+
+// === DATABASE MANAGER ===
 class DatabaseManager {
     constructor() {
-        this.dbName = 'MusicBusinessTracker';
-        this.dbVersion = 1;
-        this.db = null;
-
-        // Data schemas
-        this.schemas = {
-            revenue: {
-                id: 'string',
-                date: 'string',
-                platform: 'string',
-                amount: 'number',
-                videoId: 'string',
-                currency: 'string',
-                notes: 'string',
-                category: 'string',
-                tags: 'array',
-                createdAt: 'string',
-                updatedAt: 'string'
-            },
-            videos: {
-                id: 'string',
-                title: 'string',
-                publishDate: 'string',
-                duration: 'number',
-                views: 'number',
-                likes: 'number',
-                comments: 'number',
-                shares: 'number',
-                revenue: 'number',
-                ctr: 'number',
-                retention: 'number',
-                thumbnailUrl: 'string',
-                description: 'string',
-                tags: 'array',
-                category: 'string',
-                platform: 'string',
-                url: 'string',
-                status: 'string',
-                createdAt: 'string',
-                updatedAt: 'string'
-            },
-            streaming: {
-                id: 'string',
-                trackId: 'string',
-                platform: 'string',
-                date: 'string',
-                streams: 'number',
-                listeners: 'number',
-                revenue: 'number',
-                country: 'string',
-                playlistAdds: 'number',
-                saves: 'number',
-                skips: 'number',
-                completionRate: 'number',
-                createdAt: 'string',
-                updatedAt: 'string'
-            },
-            settings: {
-                key: 'string',
-                value: 'any',
-                type: 'string',
-                category: 'string',
-                updatedAt: 'string'
-            },
-            backups: {
-                id: 'string',
-                timestamp: 'string',
-                data: 'object',
-                size: 'number',
-                type: 'string'
-            }
-        };
-
+        this.cache = new Map();
         this.init();
     }
 
     /**
-     * Initialize database
+     * Inizializza database
      */
-    async init() {
+    init() {
         try {
-            await this.initIndexedDB();
-            await this.runMigrations();
-            console.log('✅ Database initialized successfully');
+            // Verifica compatibilità localStorage
+            if (!this.isLocalStorageAvailable()) {
+                throw new Error('LocalStorage non disponibile');
+            }
+
+            // Inizializza metadati
+            this.initMetadata();
+
+            // Inizializza settings default
+            this.initSettings();
+
+            // Inizializza revenue data
+            this.initRevenue();
+
+            console.log('Database inizializzato correttamente');
         } catch (error) {
-            console.error('❌ Database initialization failed:', error);
-            // Fallback to localStorage only
-            console.log('📦 Using localStorage fallback');
+            handleError(error, 'Errore inizializzazione database');
         }
     }
 
     /**
-     * Initialize IndexedDB
+     * Verifica disponibilità localStorage
      */
-    initIndexedDB() {
-        return new Promise((resolve, reject) => {
-            if (!window.indexedDB) {
-                reject(new Error('IndexedDB not supported'));
-                return;
-            }
+    isLocalStorageAvailable() {
+        try {
+            const test = '__test__';
+            localStorage.setItem(test, test);
+            localStorage.removeItem(test);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
 
-            const request = indexedDB.open(this.dbName, this.dbVersion);
-
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => {
-                this.db = request.result;
-                resolve();
-            };
-
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-
-                // Create object stores
-                Object.keys(this.schemas).forEach(storeName => {
-                    if (!db.objectStoreNames.contains(storeName)) {
-                        const store = db.createObjectStore(storeName, { keyPath: 'id' });
-
-                        // Create indexes based on schema
-                        const schema = this.schemas[storeName];
-                        Object.keys(schema).forEach(field => {
-                            if (field !== 'id' && ['string', 'number'].includes(schema[field])) {
-                                try {
-                                    store.createIndex(field, field, { unique: false });
-                                } catch (e) {
-                                    // Index might already exist
-                                }
-                            }
-                        });
-
-                        // Common indexes
-                        if (schema.date) {
-                            store.createIndex('date', 'date', { unique: false });
-                        }
-                        if (schema.createdAt) {
-                            store.createIndex('createdAt', 'createdAt', { unique: false });
-                        }
-                    }
-                });
-            };
+    /**
+     * Inizializza metadati applicazione
+     */
+    initMetadata() {
+        const metadata = StorageUtils.load(DB_CONFIG.keys.metadata, {
+            version: DB_CONFIG.version,
+            createdAt: new Date().toISOString(),
+            lastBackup: null,
+            totalEntries: 0
         });
+
+        // Aggiorna timestamp ultima apertura
+        metadata.lastAccess = new Date().toISOString();
+        StorageUtils.save(DB_CONFIG.keys.metadata, metadata);
     }
 
     /**
-     * Run database migrations
+     * Inizializza settings con valori default
      */
-    async runMigrations() {
-        const currentVersion = await this.getSetting('dbVersion', 0);
+    initSettings() {
+        const settings = StorageUtils.load(DB_CONFIG.keys.settings);
+        if (!settings) {
+            StorageUtils.save(DB_CONFIG.keys.settings, DB_CONFIG.defaults.settings);
+        }
+    }
 
-        if (currentVersion < 1) {
-            // Migration 1: Initial setup
-            await this.migrationV1();
-            await this.setSetting('dbVersion', 1);
+    /**
+     * Inizializza revenue data
+     */
+    initRevenue() {
+        const revenue = StorageUtils.load(DB_CONFIG.keys.revenue);
+        if (!revenue) {
+            StorageUtils.save(DB_CONFIG.keys.revenue, []);
+        }
+    }
+
+    // === REVENUE OPERATIONS ===
+
+    /**
+     * Ottiene tutti i dati revenue
+     */
+    getAllRevenue() {
+        const cacheKey = 'all_revenue';
+        if (this.cache.has(cacheKey)) {
+            return this.cache.get(cacheKey);
         }
 
-        // Future migrations can be added here
+        const data = StorageUtils.load(DB_CONFIG.keys.revenue, []);
+        this.cache.set(cacheKey, data);
+        return data;
     }
 
     /**
-     * Migration V1: Initial data setup
+     * Aggiunge nuova entrata revenue
      */
-    async migrationV1() {
-        console.log('🔄 Running migration V1...');
-
-        // Set default settings
-        const defaultSettings = {
-            currency: '€',
-            pivaThreshold: 5000,
-            monthlyTarget: 165,
-            quarterlyTarget: 500,
-            annualTarget: 2000,
-            theme: 'dark',
-            language: 'it',
-            dateFormat: 'DD/MM/YYYY',
-            backupFrequency: 'weekly',
-            notifications: true,
-            autoSave: true
-        };
-
-        for (const [key, value] of Object.entries(defaultSettings)) {
-            await this.setSetting(key, value, 'general');
-        }
-
-        console.log('✅ Migration V1 completed');
-    }
-
-    /**
-     * Create new record
-     */
-    async create(storeName, data) {
+    addRevenue(revenueData) {
         try {
-            // Validate schema
-            this.validateSchema(storeName, data);
+            // Validazione dati
+            const validatedData = this.validateRevenueData(revenueData);
 
-            // Generate ID if not provided
-            if (!data.id) {
-                data.id = this.generateId();
+            // Genera ID unico
+            validatedData.id = generateId();
+            validatedData.createdAt = new Date().toISOString();
+            validatedData.updatedAt = new Date().toISOString();
+
+            // Ottieni dati correnti
+            const currentData = this.getAllRevenue();
+
+            // Aggiungi nuovo record
+            currentData.push(validatedData);
+
+            // Salva e aggiorna cache
+            if (StorageUtils.save(DB_CONFIG.keys.revenue, currentData)) {
+                this.clearCache();
+                this.updateMetadata();
+                NotificationUtils.success(`Entrata di ${NumberUtils.formatCurrency(validatedData.amount)} aggiunta`);
+                return validatedData;
             }
 
-            // Add timestamps
-            const now = new Date().toISOString();
-            data.createdAt = now;
-            data.updatedAt = now;
-
-            // Save to IndexedDB
-            if (this.db) {
-                await this.saveToIndexedDB(storeName, data);
-            }
-
-            // Save to localStorage as backup
-            await this.saveToLocalStorage(storeName, data);
-
-            console.log(`✅ Created ${storeName} record:`, data.id);
-            return data;
-
+            throw new Error('Errore nel salvataggio');
         } catch (error) {
-            console.error(`❌ Failed to create ${storeName} record:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Read record by ID
-     */
-    async read(storeName, id) {
-        try {
-            // Try IndexedDB first
-            if (this.db) {
-                const data = await this.readFromIndexedDB(storeName, id);
-                if (data) return data;
-            }
-
-            // Fallback to localStorage
-            return await this.readFromLocalStorage(storeName, id);
-
-        } catch (error) {
-            console.error(`❌ Failed to read ${storeName} record ${id}:`, error);
+            handleError(error, 'Errore aggiunta entrata');
             return null;
         }
     }
 
     /**
-     * Update record
+     * Aggiorna entrata esistente
      */
-    async update(storeName, id, updates) {
+    updateRevenue(id, updateData) {
         try {
-            // Get existing record
-            const existing = await this.read(storeName, id);
-            if (!existing) {
-                throw new Error(`Record ${id} not found in ${storeName}`);
+            const currentData = this.getAllRevenue();
+            const index = currentData.findIndex(item => item.id === id);
+
+            if (index === -1) {
+                throw new Error('Entrata non trovata');
             }
 
-            // Merge updates
-            const updated = {
-                ...existing,
-                ...updates,
-                id, // Ensure ID doesn't change
+            // Valida dati aggiornamento
+            const validatedUpdate = this.validateRevenueData(updateData, false);
+
+            // Aggiorna record mantenendo metadati
+            const updatedRecord = {
+                ...currentData[index],
+                ...validatedUpdate,
                 updatedAt: new Date().toISOString()
             };
 
-            // Validate schema
-            this.validateSchema(storeName, updated);
+            currentData[index] = updatedRecord;
 
-            // Save to IndexedDB
-            if (this.db) {
-                await this.saveToIndexedDB(storeName, updated);
+            // Salva e aggiorna cache
+            if (StorageUtils.save(DB_CONFIG.keys.revenue, currentData)) {
+                this.clearCache();
+                NotificationUtils.success('Entrata aggiornata');
+                return updatedRecord;
             }
 
-            // Save to localStorage
-            await this.saveToLocalStorage(storeName, updated);
-
-            console.log(`✅ Updated ${storeName} record:`, id);
-            return updated;
-
+            throw new Error('Errore nel salvataggio');
         } catch (error) {
-            console.error(`❌ Failed to update ${storeName} record ${id}:`, error);
-            throw error;
+            handleError(error, 'Errore aggiornamento entrata');
+            return null;
         }
     }
 
     /**
-     * Delete record
+     * Elimina entrata
      */
-    async delete(storeName, id) {
+    deleteRevenue(id) {
         try {
-            // Delete from IndexedDB
-            if (this.db) {
-                await this.deleteFromIndexedDB(storeName, id);
+            const currentData = this.getAllRevenue();
+            const index = currentData.findIndex(item => item.id === id);
+
+            if (index === -1) {
+                throw new Error('Entrata non trovata');
             }
 
-            // Delete from localStorage
-            await this.deleteFromLocalStorage(storeName, id);
+            const deletedItem = currentData[index];
+            currentData.splice(index, 1);
 
-            console.log(`✅ Deleted ${storeName} record:`, id);
-            return true;
+            // Salva e aggiorna cache
+            if (StorageUtils.save(DB_CONFIG.keys.revenue, currentData)) {
+                this.clearCache();
+                this.updateMetadata();
+                NotificationUtils.success('Entrata eliminata');
+                return deletedItem;
+            }
 
+            throw new Error('Errore nel salvataggio');
         } catch (error) {
-            console.error(`❌ Failed to delete ${storeName} record ${id}:`, error);
-            throw error;
+            handleError(error, 'Errore eliminazione entrata');
+            return null;
         }
     }
 
     /**
-     * Query records with filters
+     * Ottiene entrata per ID
      */
-    async query(storeName, filters = {}, options = {}) {
-        try {
-            let results = [];
-
-            // Try IndexedDB first
-            if (this.db) {
-                results = await this.queryIndexedDB(storeName, filters, options);
-            } else {
-                // Fallback to localStorage
-                results = await this.queryLocalStorage(storeName, filters, options);
-            }
-
-            return results;
-
-        } catch (error) {
-            console.error(`❌ Failed to query ${storeName}:`, error);
-            return [];
-        }
+    getRevenueById(id) {
+        const data = this.getAllRevenue();
+        return data.find(item => item.id === id) || null;
     }
 
     /**
-     * Get all records from store
+     * Filtra revenue per periodo
      */
-    async getAll(storeName) {
-        return await this.query(storeName);
-    }
+    getRevenueByDateRange(startDate, endDate) {
+        const data = this.getAllRevenue();
+        const start = new Date(startDate);
+        const end = new Date(endDate);
 
-    /**
-     * Count records in store
-     */
-    async count(storeName, filters = {}) {
-        const results = await this.query(storeName, filters);
-        return results.length;
-    }
-
-    /**
-     * Clear all records from store
-     */
-    async clear(storeName) {
-        try {
-            // Clear IndexedDB
-            if (this.db) {
-                const transaction = this.db.transaction([storeName], 'readwrite');
-                const store = transaction.objectStore(storeName);
-                await store.clear();
-            }
-
-            // Clear localStorage
-            const lsKey = `${this.dbName}_${storeName}`;
-            localStorage.removeItem(lsKey);
-
-            console.log(`✅ Cleared ${storeName} store`);
-            return true;
-
-        } catch (error) {
-            console.error(`❌ Failed to clear ${storeName}:`, error);
-            throw error;
-        }
-    }
-
-    /**
-     * Settings management
-     */
-    async getSetting(key, defaultValue = null) {
-        try {
-            const setting = await this.read('settings', key);
-            return setting ? setting.value : defaultValue;
-        } catch (error) {
-            return defaultValue;
-        }
-    }
-
-    async setSetting(key, value, category = 'general') {
-        const setting = {
-            id: key,
-            key,
-            value,
-            type: typeof value,
-            category,
-            updatedAt: new Date().toISOString()
-        };
-
-        return await this.create('settings', setting);
-    }
-
-    /**
-     * Backup operations
-     */
-    async createBackup(type = 'manual') {
-        try {
-            const backupData = {};
-
-            // Get all data from all stores
-            for (const storeName of Object.keys(this.schemas)) {
-                if (storeName !== 'backups') {
-                    backupData[storeName] = await this.getAll(storeName);
-                }
-            }
-
-            const backup = {
-                id: this.generateId(),
-                timestamp: new Date().toISOString(),
-                data: backupData,
-                size: JSON.stringify(backupData).length,
-                type
-            };
-
-            await this.create('backups', backup);
-
-            console.log('✅ Backup created:', backup.id);
-            return backup;
-
-        } catch (error) {
-            console.error('❌ Failed to create backup:', error);
-            throw error;
-        }
-    }
-
-    async restoreBackup(backupId) {
-        try {
-            const backup = await this.read('backups', backupId);
-            if (!backup) {
-                throw new Error('Backup not found');
-            }
-
-            // Clear existing data
-            for (const storeName of Object.keys(backup.data)) {
-                await this.clear(storeName);
-            }
-
-            // Restore data
-            for (const [storeName, records] of Object.entries(backup.data)) {
-                for (const record of records) {
-                    await this.create(storeName, record);
-                }
-            }
-
-            console.log('✅ Backup restored:', backupId);
-            return true;
-
-        } catch (error) {
-            console.error('❌ Failed to restore backup:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Export data as JSON
-     */
-    async exportData(storeNames = null) {
-        const data = {};
-        const stores = storeNames || Object.keys(this.schemas);
-
-        for (const storeName of stores) {
-            data[storeName] = await this.getAll(storeName);
-        }
-
-        return {
-            timestamp: new Date().toISOString(),
-            version: this.dbVersion,
-            data
-        };
-    }
-
-    /**
-     * Import data from JSON
-     */
-    async importData(importData, merge = false) {
-        try {
-            if (!merge) {
-                // Clear existing data
-                for (const storeName of Object.keys(importData.data)) {
-                    await this.clear(storeName);
-                }
-            }
-
-            // Import new data
-            for (const [storeName, records] of Object.entries(importData.data)) {
-                for (const record of records) {
-                    if (merge) {
-                        const existing = await this.read(storeName, record.id);
-                        if (existing) {
-                            await this.update(storeName, record.id, record);
-                        } else {
-                            await this.create(storeName, record);
-                        }
-                    } else {
-                        await this.create(storeName, record);
-                    }
-                }
-            }
-
-            console.log('✅ Data imported successfully');
-            return true;
-
-        } catch (error) {
-            console.error('❌ Failed to import data:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * IndexedDB operations
-     */
-    saveToIndexedDB(storeName, data) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.put(data);
-
-            request.onsuccess = () => resolve(data);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    readFromIndexedDB(storeName, id) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            const request = store.get(id);
-
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    deleteFromIndexedDB(storeName, id) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
-            const request = store.delete(id);
-
-            request.onsuccess = () => resolve();
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    queryIndexedDB(storeName, filters, options) {
-        return new Promise((resolve, reject) => {
-            const transaction = this.db.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
-            const request = store.getAll();
-
-            request.onsuccess = () => {
-                let results = request.result;
-
-                // Apply filters
-                results = this.applyFilters(results, filters);
-
-                // Apply sorting
-                if (options.sortBy) {
-                    results = this.applySorting(results, options.sortBy, options.sortOrder);
-                }
-
-                // Apply pagination
-                if (options.limit || options.offset) {
-                    results = this.applyPagination(results, options.offset, options.limit);
-                }
-
-                resolve(results);
-            };
-
-            request.onerror = () => reject(request.error);
-        });
-    }
-
-    /**
-     * LocalStorage operations
-     */
-    async saveToLocalStorage(storeName, data) {
-        const lsKey = `${this.dbName}_${storeName}`;
-        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
-        existing[data.id] = data;
-        localStorage.setItem(lsKey, JSON.stringify(existing));
-    }
-
-    async readFromLocalStorage(storeName, id) {
-        const lsKey = `${this.dbName}_${storeName}`;
-        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
-        return existing[id] || null;
-    }
-
-    async deleteFromLocalStorage(storeName, id) {
-        const lsKey = `${this.dbName}_${storeName}`;
-        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
-        delete existing[id];
-        localStorage.setItem(lsKey, JSON.stringify(existing));
-    }
-
-    async queryLocalStorage(storeName, filters, options) {
-        const lsKey = `${this.dbName}_${storeName}`;
-        const existing = JSON.parse(localStorage.getItem(lsKey) || '{}');
-        let results = Object.values(existing);
-
-        // Apply filters
-        results = this.applyFilters(results, filters);
-
-        // Apply sorting
-        if (options.sortBy) {
-            results = this.applySorting(results, options.sortBy, options.sortOrder);
-        }
-
-        // Apply pagination
-        if (options.limit || options.offset) {
-            results = this.applyPagination(results, options.offset, options.limit);
-        }
-
-        return results;
-    }
-
-    /**
-     * Utility functions
-     */
-    applyFilters(data, filters) {
         return data.filter(item => {
-            return Object.keys(filters).every(key => {
-                const filterValue = filters[key];
-                const itemValue = item[key];
-
-                if (filterValue === null || filterValue === undefined) {
-                    return true;
-                }
-
-                if (typeof filterValue === 'object' && filterValue.operator) {
-                    return this.applyOperator(itemValue, filterValue.value, filterValue.operator);
-                }
-
-                return itemValue === filterValue;
-            });
+            const itemDate = new Date(item.date);
+            return itemDate >= start && itemDate <= end;
         });
     }
 
-    applyOperator(itemValue, filterValue, operator) {
-        switch (operator) {
-            case 'gt': return itemValue > filterValue;
-            case 'gte': return itemValue >= filterValue;
-            case 'lt': return itemValue < filterValue;
-            case 'lte': return itemValue <= filterValue;
-            case 'ne': return itemValue !== filterValue;
-            case 'contains': return String(itemValue).toLowerCase().includes(String(filterValue).toLowerCase());
-            case 'startsWith': return String(itemValue).toLowerCase().startsWith(String(filterValue).toLowerCase());
-            case 'endsWith': return String(itemValue).toLowerCase().endsWith(String(filterValue).toLowerCase());
-            case 'in': return Array.isArray(filterValue) && filterValue.includes(itemValue);
-            default: return itemValue === filterValue;
+    /**
+     * Ottiene revenue per mese corrente
+     */
+    getCurrentMonthRevenue() {
+        const startDate = DateUtils.getCurrentMonthStart();
+        const endDate = DateUtils.getCurrentMonthEnd();
+        return this.getRevenueByDateRange(startDate, endDate);
+    }
+
+    /**
+     * Ottiene revenue per anno corrente
+     */
+    getCurrentYearRevenue() {
+        const currentYear = new Date().getFullYear();
+        const startDate = new Date(currentYear, 0, 1);
+        const endDate = new Date(currentYear, 11, 31);
+        return this.getRevenueByDateRange(startDate, endDate);
+    }
+
+    /**
+     * Valida dati revenue
+     */
+    validateRevenueData(data, requireAll = true) {
+        const validated = {};
+
+        // Data (obbligatoria)
+        if (requireAll || data.date !== undefined) {
+            if (!ValidationUtils.isValidDate(data.date)) {
+                throw new Error('Data non valida');
+            }
+            validated.date = data.date;
+        }
+
+        // Piattaforma (obbligatoria)
+        if (requireAll || data.platform !== undefined) {
+            if (!ValidationUtils.isNonEmptyString(data.platform)) {
+                throw new Error('Piattaforma obbligatoria');
+            }
+            validated.platform = data.platform.trim();
+        }
+
+        // Importo (obbligatorio)
+        if (requireAll || data.amount !== undefined) {
+            const amount = NumberUtils.parseNumber(data.amount);
+            if (!ValidationUtils.isPositiveAmount(amount)) {
+                throw new Error('Importo deve essere positivo');
+            }
+            validated.amount = amount;
+        }
+
+        // Video/Track (opzionale)
+        if (data.videoTitle !== undefined) {
+            validated.videoTitle = data.videoTitle ? data.videoTitle.trim() : '';
+        }
+
+        // Note (opzionale)
+        if (data.notes !== undefined) {
+            validated.notes = data.notes ? data.notes.trim() : '';
+        }
+
+        // Categoria (opzionale)
+        if (data.category !== undefined) {
+            validated.category = data.category ? data.category.trim() : '';
+        }
+
+        return validated;
+    }
+
+    // === SETTINGS OPERATIONS ===
+
+    /**
+     * Ottiene settings
+     */
+    getSettings() {
+        const cacheKey = 'settings';
+        if (this.cache.has(cacheKey)) {
+            return this.cache.get(cacheKey);
+        }
+
+        const settings = StorageUtils.load(DB_CONFIG.keys.settings, DB_CONFIG.defaults.settings);
+        this.cache.set(cacheKey, settings);
+        return settings;
+    }
+
+    /**
+     * Aggiorna settings
+     */
+    updateSettings(newSettings) {
+        try {
+            const currentSettings = this.getSettings();
+            const updatedSettings = { ...currentSettings, ...newSettings };
+
+            // Validazione settings
+            this.validateSettings(updatedSettings);
+
+            if (StorageUtils.save(DB_CONFIG.keys.settings, updatedSettings)) {
+                this.clearCache();
+                NotificationUtils.success('Impostazioni salvate');
+                return updatedSettings;
+            }
+
+            throw new Error('Errore nel salvataggio');
+        } catch (error) {
+            handleError(error, 'Errore aggiornamento impostazioni');
+            return null;
         }
     }
 
-    applySorting(data, sortBy, sortOrder = 'asc') {
-        return data.sort((a, b) => {
-            const aVal = a[sortBy];
-            const bVal = b[sortBy];
-
-            if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
-            if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
-            return 0;
-        });
-    }
-
-    applyPagination(data, offset = 0, limit = null) {
-        if (limit) {
-            return data.slice(offset, offset + limit);
-        }
-        return data.slice(offset);
-    }
-
-    validateSchema(storeName, data) {
-        const schema = this.schemas[storeName];
-        if (!schema) {
-            throw new Error(`Schema not found for store: ${storeName}`);
+    /**
+     * Valida settings
+     */
+    validateSettings(settings) {
+        // Soglia P.IVA
+        if (settings.pivaThreshold !== undefined) {
+            const threshold = NumberUtils.parseNumber(settings.pivaThreshold);
+            if (!ValidationUtils.isPositiveAmount(threshold)) {
+                throw new Error('Soglia P.IVA deve essere positiva');
+            }
         }
 
-        // Basic validation - can be expanded
-        for (const [field, type] of Object.entries(schema)) {
-            if (data[field] !== undefined && data[field] !== null) {
-                const actualType = Array.isArray(data[field]) ? 'array' : typeof data[field];
-                if (type !== 'any' && actualType !== type) {
-                    console.warn(`Schema mismatch for ${storeName}.${field}: expected ${type}, got ${actualType}`);
-                }
+        // Obiettivo mensile
+        if (settings.monthlyTarget !== undefined) {
+            const target = NumberUtils.parseNumber(settings.monthlyTarget);
+            if (!ValidationUtils.isPositiveAmount(target)) {
+                throw new Error('Obiettivo mensile deve essere positivo');
             }
         }
     }
 
-    generateId() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2);
-    }
+    // === ANALYTICS & REPORTING ===
 
     /**
-     * Get database statistics
+     * Calcola statistiche revenue
      */
-    async getStats() {
-        const stats = {};
+    getRevenueStats() {
+        const allRevenue = this.getAllRevenue();
+        const currentMonthRevenue = this.getCurrentMonthRevenue();
+        const currentYearRevenue = this.getCurrentYearRevenue();
 
-        for (const storeName of Object.keys(this.schemas)) {
-            stats[storeName] = await this.count(storeName);
+        const stats = {
+            // Totali
+            totalEntries: allRevenue.length,
+            totalRevenue: allRevenue.reduce((sum, item) => sum + item.amount, 0),
+
+            // Mese corrente
+            currentMonthEntries: currentMonthRevenue.length,
+            currentMonthRevenue: currentMonthRevenue.reduce((sum, item) => sum + item.amount, 0),
+
+            // Anno corrente
+            currentYearEntries: currentYearRevenue.length,
+            currentYearRevenue: currentYearRevenue.reduce((sum, item) => sum + item.amount, 0),
+
+            // Medie
+            averagePerEntry: 0,
+            averagePerMonth: 0,
+
+            // Per piattaforma
+            byPlatform: {}
+        };
+
+        // Calcola medie
+        if (stats.totalEntries > 0) {
+            stats.averagePerEntry = stats.totalRevenue / stats.totalEntries;
         }
+
+        // Raggruppa per piattaforma
+        allRevenue.forEach(item => {
+            if (!stats.byPlatform[item.platform]) {
+                stats.byPlatform[item.platform] = {
+                    entries: 0,
+                    revenue: 0
+                };
+            }
+            stats.byPlatform[item.platform].entries++;
+            stats.byPlatform[item.platform].revenue += item.amount;
+        });
 
         return stats;
     }
 
     /**
-     * Get singleton instance
+     * Ottiene trend mensili ultimi 12 mesi
      */
-    static getInstance() {
-        if (!DatabaseManager.instance) {
-            DatabaseManager.instance = new DatabaseManager();
+    getMonthlyTrends() {
+        const trends = [];
+        const now = new Date();
+
+        for (let i = 11; i >= 0; i--) {
+            const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
+            const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+
+            const monthRevenue = this.getRevenueByDateRange(startDate, endDate);
+            const total = monthRevenue.reduce((sum, item) => sum + item.amount, 0);
+
+            trends.push({
+                month: DateUtils.formatDate(startDate).substring(3), // MM/YYYY
+                revenue: total,
+                entries: monthRevenue.length
+            });
         }
-        return DatabaseManager.instance;
+
+        return trends;
+    }
+
+    // === BACKUP & RESTORE ===
+
+    /**
+     * Crea backup completo
+     */
+    createBackup() {
+        try {
+            const backup = {
+                version: DB_CONFIG.version,
+                timestamp: new Date().toISOString(),
+                data: {
+                    revenue: this.getAllRevenue(),
+                    settings: this.getSettings(),
+                    metadata: StorageUtils.load(DB_CONFIG.keys.metadata)
+                }
+            };
+
+            const filename = `music-business-backup-${DateUtils.formatDate(new Date()).replace(/\//g, '-')}.json`;
+            ExportUtils.exportJSON(backup, filename);
+
+            // Aggiorna timestamp ultimo backup
+            const metadata = StorageUtils.load(DB_CONFIG.keys.metadata);
+            metadata.lastBackup = new Date().toISOString();
+            StorageUtils.save(DB_CONFIG.keys.metadata, metadata);
+
+            return backup;
+        } catch (error) {
+            handleError(error, 'Errore creazione backup');
+            return null;
+        }
+    }
+
+    /**
+     * Ripristina da backup
+     */
+    restoreFromBackup(backupData) {
+        try {
+            // Validazione backup
+            if (!backupData || !backupData.data) {
+                throw new Error('Backup non valido');
+            }
+
+            // Conferma utente
+            if (!confirm('Sei sicuro? Questa operazione sostituirà tutti i dati correnti.')) {
+                return false;
+            }
+
+            // Ripristina dati
+            if (backupData.data.revenue) {
+                StorageUtils.save(DB_CONFIG.keys.revenue, backupData.data.revenue);
+            }
+
+            if (backupData.data.settings) {
+                StorageUtils.save(DB_CONFIG.keys.settings, backupData.data.settings);
+            }
+
+            // Aggiorna metadati
+            const metadata = StorageUtils.load(DB_CONFIG.keys.metadata);
+            metadata.restoredAt = new Date().toISOString();
+            metadata.restoredFrom = backupData.timestamp;
+            StorageUtils.save(DB_CONFIG.keys.metadata, metadata);
+
+            this.clearCache();
+            NotificationUtils.success('Backup ripristinato con successo');
+
+            // Ricarica pagina per aggiornare UI
+            setTimeout(() => window.location.reload(), 1000);
+
+            return true;
+        } catch (error) {
+            handleError(error, 'Errore ripristino backup');
+            return false;
+        }
+    }
+
+    // === CACHE MANAGEMENT ===
+
+    /**
+     * Pulisce cache
+     */
+    clearCache() {
+        this.cache.clear();
+    }
+
+    /**
+     * Aggiorna metadati
+     */
+    updateMetadata() {
+        const metadata = StorageUtils.load(DB_CONFIG.keys.metadata);
+        metadata.totalEntries = this.getAllRevenue().length;
+        metadata.lastModified = new Date().toISOString();
+        StorageUtils.save(DB_CONFIG.keys.metadata, metadata);
+    }
+
+    // === UTILITY METHODS ===
+
+    /**
+     * Verifica stato P.IVA
+     */
+    checkPivaStatus() {
+        const settings = this.getSettings();
+        const currentYearRevenue = this.getCurrentYearRevenue();
+        const totalRevenue = currentYearRevenue.reduce((sum, item) => sum + item.amount, 0);
+
+        return {
+            currentRevenue: totalRevenue,
+            threshold: settings.pivaThreshold,
+            percentage: (totalRevenue / settings.pivaThreshold) * 100,
+            remaining: settings.pivaThreshold - totalRevenue,
+            needsPiva: totalRevenue >= settings.pivaThreshold
+        };
+    }
+
+    /**
+     * Verifica obiettivi mensili
+     */
+    checkMonthlyGoals() {
+        const settings = this.getSettings();
+        const currentMonthRevenue = this.getCurrentMonthRevenue();
+        const totalRevenue = currentMonthRevenue.reduce((sum, item) => sum + item.amount, 0);
+
+        return {
+            currentRevenue: totalRevenue,
+            target: settings.monthlyTarget,
+            percentage: (totalRevenue / settings.monthlyTarget) * 100,
+            remaining: settings.monthlyTarget - totalRevenue,
+            achieved: totalRevenue >= settings.monthlyTarget
+        };
     }
 }
 
-// Create global instance
-window.DB = DatabaseManager.getInstance();
+// === INIZIALIZZAZIONE GLOBALE ===
+const DB = new DatabaseManager();
 
-// Export for modules
-window.DatabaseManager = DatabaseManager;
+// Export per uso globale
+window.DB = DB;
