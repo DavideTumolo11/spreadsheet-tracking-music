@@ -80,6 +80,30 @@ body {
     padding: 0 var(--spacing-lg);
 }
 
+/* Header mobile compatto */
+@media (max-width: 768px) {
+    .header {
+        height: 50px;
+        /* Più basso su mobile */
+    }
+
+    .header-content {
+        padding: 0 var(--spacing-sm);
+        /* Meno padding */
+    }
+
+    .logo span {
+        font-size: 0.9rem;
+        /* Testo più piccolo */
+    }
+
+    .mobile-menu-toggle {
+        width: 35px;
+        height: 35px;
+        /* Button più piccolo */
+    }
+}
+
 .logo {
     display: flex;
     align-items: center;
