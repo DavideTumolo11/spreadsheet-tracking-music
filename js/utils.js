@@ -126,16 +126,38 @@ const NumberUtils = {
 // === LOCALSTORAGE UTILITIES ===
 const StorageUtils = {
     /**
+     * Verifica se localStorage è disponibile e funzionante
+     */
+    isAvailable() {
+        try {
+            const test = '__storage_test__';
+            localStorage.setItem(test, test);
+            localStorage.removeItem(test);
+            return true;
+        } catch (error) {
+            console.warn('LocalStorage non disponibile:', error);
+            return false;
+        }
+    },
+
+    /**
      * Salva dati nel localStorage con gestione errori
      */
     save(key, data) {
         try {
+            if (!this.isAvailable()) {
+                console.error('LocalStorage non disponibile');
+                return false;
+            }
+
             const jsonData = JSON.stringify(data);
             localStorage.setItem(key, jsonData);
             return true;
         } catch (error) {
             console.error('Errore salvataggio localStorage:', error);
-            NotificationUtils.show('Errore nel salvataggio dati', 'error');
+            if (typeof NotificationUtils !== 'undefined') {
+                NotificationUtils.show('Errore nel salvataggio dati', 'error');
+            }
             return false;
         }
     },
@@ -145,6 +167,10 @@ const StorageUtils = {
      */
     load(key, defaultValue = null) {
         try {
+            if (!this.isAvailable()) {
+                return defaultValue;
+            }
+
             const data = localStorage.getItem(key);
             if (data === null) return defaultValue;
             return JSON.parse(data);
@@ -159,6 +185,10 @@ const StorageUtils = {
      */
     remove(key) {
         try {
+            if (!this.isAvailable()) {
+                return false;
+            }
+
             localStorage.removeItem(key);
             return true;
         } catch (error) {
@@ -171,6 +201,9 @@ const StorageUtils = {
      * Verifica se chiave esiste
      */
     exists(key) {
+        if (!this.isAvailable()) {
+            return false;
+        }
         return localStorage.getItem(key) !== null;
     },
 
@@ -178,11 +211,19 @@ const StorageUtils = {
      * Ottiene dimensione storage utilizzata
      */
     getStorageSize() {
+        if (!this.isAvailable()) {
+            return 0;
+        }
+
         let total = 0;
-        for (let key in localStorage) {
-            if (localStorage.hasOwnProperty(key)) {
-                total += localStorage[key].length + key.length;
+        try {
+            for (let key in localStorage) {
+                if (localStorage.hasOwnProperty(key)) {
+                    total += localStorage[key].length + key.length;
+                }
             }
+        } catch (error) {
+            console.error('Errore calcolo dimensione storage:', error);
         }
         return total;
     }
@@ -195,7 +236,10 @@ const NotificationUtils = {
      */
     show(message, type = 'info', duration = 5000) {
         const container = document.getElementById('notifications');
-        if (!container) return;
+        if (!container) {
+            console.log(`Notification (${type}): ${message}`);
+            return;
+        }
 
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
@@ -321,7 +365,9 @@ const ExportUtils = {
      */
     exportCSV(data, filename, headers) {
         if (!Array.isArray(data) || data.length === 0) {
-            NotificationUtils.warning('Nessun dato da esportare');
+            if (typeof NotificationUtils !== 'undefined') {
+                NotificationUtils.warning('Nessun dato da esportare');
+            }
             return;
         }
 
@@ -364,7 +410,10 @@ const ExportUtils = {
         document.body.removeChild(link);
 
         URL.revokeObjectURL(url);
-        NotificationUtils.success(`File ${filename} scaricato con successo`);
+        
+        if (typeof NotificationUtils !== 'undefined') {
+            NotificationUtils.success(`File ${filename} scaricato con successo`);
+        }
     }
 };
 
@@ -461,11 +510,15 @@ function generateId() {
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
-        NotificationUtils.success('Copiato negli appunti');
+        if (typeof NotificationUtils !== 'undefined') {
+            NotificationUtils.success('Copiato negli appunti');
+        }
         return true;
     } catch (error) {
         console.error('Errore copia clipboard:', error);
-        NotificationUtils.error('Errore nella copia');
+        if (typeof NotificationUtils !== 'undefined') {
+            NotificationUtils.error('Errore nella copia');
+        }
         return false;
     }
 }
@@ -475,7 +528,9 @@ async function copyToClipboard(text) {
  */
 function handleError(error, message = 'Si è verificato un errore') {
     console.error('Errore applicazione:', error);
-    NotificationUtils.error(message);
+    if (typeof NotificationUtils !== 'undefined') {
+        NotificationUtils.error(message);
+    }
 }
 
 // === EXPORT PER USO GLOBALE ===
