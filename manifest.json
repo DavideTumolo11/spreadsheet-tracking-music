@@ -1,0 +1,113 @@
+{
+    "name": "Music Business Tracker",
+    "short_name": "MusicBiz",
+    "description": "Gestione professionale del tuo business musicale AI",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0d1117",
+    "theme_color": "#2ea043",
+    "orientation": "portrait-primary",
+    "scope": "/",
+    "lang": "it",
+    "categories": [
+        "business",
+        "music",
+        "productivity"
+    ],
+    "icons": [
+        {
+            "src": "icons/icon-72.png",
+            "sizes": "72x72",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-96.png",
+            "sizes": "96x96",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-128.png",
+            "sizes": "128x128",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-144.png",
+            "sizes": "144x144",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-152.png",
+            "sizes": "152x152",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "icons/icon-384.png",
+            "sizes": "384x384",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "Aggiungi Entrata",
+            "short_name": "Nuova Entrata",
+            "description": "Aggiungi nuova entrata revenue",
+            "url": "/?section=revenue&action=add",
+            "icons": [
+                {
+                    "src": "icons/shortcut-revenue.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Dashboard",
+            "short_name": "Dashboard",
+            "description": "Visualizza panoramica business",
+            "url": "/?section=dashboard",
+            "icons": [
+                {
+                    "src": "icons/shortcut-dashboard.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "Report Commercialista",
+            "short_name": "Report",
+            "description": "Genera report per commercialista",
+            "url": "/?section=reports&action=commercial",
+            "icons": [
+                {
+                    "src": "icons/shortcut-reports.png",
+                    "sizes": "96x96"
+                }
+            ]
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "screenshots/dashboard-mobile.png",
+            "sizes": "390x844",
+            "type": "image/png",
+            "form_factor": "narrow"
+        },
+        {
+            "src": "screenshots/revenue-mobile.png",
+            "sizes": "390x844",
+            "type": "image/png",
+            "form_factor": "narrow"
+        }
+    ]
+}

@@ -7,12 +7,324 @@
     <title>Music Business Tracker</title>
     <meta name="description" content="Gestione professionale del tuo business musicale AI">
 
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#2ea043">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="MusicBiz">
+    <meta name="msapplication-TileColor" content="#0d1117">
+    <meta name="msapplication-TileImage" content="icons/icon-144.png">
+
+    <!-- PWA Links -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-152.png">
+    <link rel="apple-touch-icon" sizes="72x72" href="icons/icon-72.png">
+    <link rel="apple-touch-icon" sizes="96x96" href="icons/icon-96.png">
+    <link rel="apple-touch-icon" sizes="128x128" href="icons/icon-128.png">
+    <link rel="apple-touch-icon" sizes="144x144" href="icons/icon-144.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="384x384" href="icons/icon-384.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png">
+
     <!-- CSS -->
     <link rel="stylesheet" href="css/main.css">
 
     <!-- Font Awesome per icone -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
+<body>
+    <!-- 🎵 HEADER -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <i class="fas fa-music"></i>
+                <span>Music Business Tracker</span>
+            </div>
+            <div class="header-info">
+                <span class="date" id="currentDate"></span>
+                <span class="status" id="appStatus">● Online</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 📱 MAIN CONTAINER -->
+    <div class="container">
+        <!-- 📋 SIDEBAR NAVIGATION -->
+        <nav class="sidebar">
+            <ul class="nav-menu">
+                <li class="nav-item active" data-section="dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </li>
+                <li class="nav-item" data-section="revenue">
+                    <i class="fas fa-euro-sign"></i>
+                    <span>Revenue</span>
+                </li>
+                <li class="nav-item" data-section="videos">
+                    <i class="fas fa-video"></i>
+                    <span>Video</span>
+                </li>
+                <li class="nav-item" data-section="analytics">
+                    <i class="fas fa-chart-bar"></i>
+                    <span>Analytics</span>
+                </li>
+                <li class="nav-item" data-section="reports">
+                    <i class="fas fa-file-alt"></i>
+                    <span>Reports</span>
+                </li>
+                <li class="nav-item" data-section="settings">
+                    <i class="fas fa-cog"></i>
+                    <span>Impostazioni</span>
+                </li>
+            </ul>
+
+            <!-- 💾 BACKUP RAPIDO -->
+            <div class="sidebar-bottom">
+                <button class="btn-backup" id="quickBackup">
+                    <i class="fas fa-download"></i>
+                    <span>Backup</span>
+                </button>
+            </div>
+        </nav>
+
+        <!-- 📊 CONTENT AREA PRINCIPALE -->
+        <main class="content">
+            <!-- 🏠 DASHBOARD SECTION -->
+            <section id="dashboard-section" class="section active">
+                <div class="section-header">
+                    <h1><i class="fas fa-chart-line"></i> Dashboard</h1>
+                    <div class="section-actions">
+                        <button class="btn-primary" id="addRevenueQuick">
+                            <i class="fas fa-plus"></i> Aggiungi Entrata
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Dashboard content sarà caricato da dashboard.js -->
+                <div id="dashboard-content">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Caricamento dashboard...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 💰 REVENUE SECTION -->
+            <section id="revenue-section" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-euro-sign"></i> Gestione Revenue</h1>
+                    <div class="section-actions">
+                        <button class="btn-primary" id="addRevenueBtn">
+                            <i class="fas fa-plus"></i> Nuova Entrata
+                        </button>
+                        <button class="btn-secondary" id="exportRevenueBtn">
+                            <i class="fas fa-file-export"></i> Esporta
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Revenue content sarà caricato da revenue.js -->
+                <div id="revenue-content">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Caricamento revenue...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 📹 VIDEOS SECTION -->
+            <section id="videos-section" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-video"></i> Gestione Video</h1>
+                    <div class="section-actions">
+                        <button class="btn-primary" id="addVideoBtn">
+                            <i class="fas fa-plus"></i> Nuovo Video
+                        </button>
+                        <button class="btn-secondary" id="syncVideosBtn">
+                            <i class="fas fa-sync"></i> Sync Revenue
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Videos content sarà caricato da videos.js -->
+                <div id="videos-content">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Caricamento video...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 📊 ANALYTICS SECTION -->
+            <section id="analytics-section" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-chart-bar"></i> Analytics Avanzate</h1>
+                    <div class="section-actions">
+                        <button class="btn-secondary" id="refreshAnalyticsBtn">
+                            <i class="fas fa-refresh"></i> Aggiorna
+                        </button>
+                        <button class="btn-secondary" id="exportAnalyticsBtn">
+                            <i class="fas fa-download"></i> Esporta Analytics
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Analytics content sarà caricato da analytics.js -->
+                <div id="analytics-content">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Caricamento analytics...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 📄 REPORTS SECTION -->
+            <section id="reports-section" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-file-alt"></i> Report Generator</h1>
+                    <div class="section-actions">
+                        <button class="btn-primary" id="quickReportBtn">
+                            <i class="fas fa-bolt"></i> Report Rapido
+                        </button>
+                        <button class="btn-secondary" id="scheduleReportBtn">
+                            <i class="fas fa-clock"></i> Programma
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Reports content sarà caricato da reports.js -->
+                <div id="reports-content">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Caricamento reports...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ⚙️ SETTINGS SECTION -->
+            <section id="settings-section" class="section">
+                <div class="section-header">
+                    <h1><i class="fas fa-cog"></i> Impostazioni</h1>
+                </div>
+
+                <!-- Settings content sarà caricato da settings.js -->
+                <div id="settings-content">
+                    <div class="loading">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <span>Caricamento impostazioni...</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 🚨 NOTIFICATIONS AREA -->
+    <div id="notifications" class="notifications"></div>
+
+    <!-- 📱 MODAL CONTAINER -->
+    <div id="modal-container" class="modal-container"></div>
+
+    <!-- 🔔 PWA INSTALL PROMPT -->
+    <div id="pwa-install-prompt" class="pwa-prompt hidden">
+        <div class="pwa-prompt-content">
+            <div class="pwa-prompt-icon">
+                <i class="fas fa-mobile-alt"></i>
+            </div>
+            <div class="pwa-prompt-text">
+                <h3>Installa l'App</h3>
+                <p>Aggiungi Music Business Tracker alla tua schermata Home per un accesso rapido</p>
+            </div>
+            <div class="pwa-prompt-actions">
+                <button class="btn-secondary" id="pwa-dismiss">Non ora</button>
+                <button class="btn-primary" id="pwa-install">Installa</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📊 SCRIPTS - ORDINE IMPORTANTE! -->
+    <!-- Utils prima di tutto -->
+    <script src="js/utils.js"></script>
+
+    <!-- Database dopo utils -->
+    <script src="js/database.js"></script>
+
+    <!-- Tutti i moduli dopo database -->
+    <script src="js/dashboard.js"></script>
+    <script src="js/revenue.js"></script>
+    <script src="js/videos.js"></script>
+    <script src="js/analytics.js"></script>
+    <script src="js/reports.js"></script>
+    <script src="js/settings.js"></script>
+
+    <!-- App controller SEMPRE ULTIMO -->
+    <script src="js/app.js"></script>
+
+    <!-- 🔧 PWA Service Worker Registration -->
+    <script>
+        // Registra Service Worker per PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('✅ Service Worker registrato:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('❌ Service Worker registration fallita:', error);
+                    });
+            });
+        }
+
+        // PWA Install Prompt
+        let deferredPrompt;
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+
+            // Mostra prompt personalizzato
+            const installPrompt = document.getElementById('pwa-install-prompt');
+            if (installPrompt) {
+                installPrompt.classList.remove('hidden');
+            }
+        });
+
+        // Gestione click install
+        document.addEventListener('click', (e) => {
+            if (e.target.id === 'pwa-install') {
+                const installPrompt = document.getElementById('pwa-install-prompt');
+                installPrompt.classList.add('hidden');
+
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('✅ PWA installata');
+                        }
+                        deferredPrompt = null;
+                    });
+                }
+            }
+
+            if (e.target.id === 'pwa-dismiss') {
+                document.getElementById('pwa-install-prompt').classList.add('hidden');
+            }
+        });
+
+        // Gestione app installata
+        window.addEventListener('appinstalled', (evt) => {
+            console.log('✅ PWA installata con successo');
+            if (window.NotificationUtils) {
+                NotificationUtils.success('App installata! Ora disponibile nella Home Screen');
+            }
+        });
+    </script>
+</body>
+
+</html>
 
 <body>
     <!-- 🎵 HEADER -->

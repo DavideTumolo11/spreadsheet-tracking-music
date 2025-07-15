@@ -673,10 +673,111 @@ body {
     margin-bottom: var(--spacing-lg);
 }
 
+/* === PWA INSTALL PROMPT === */
+.pwa-prompt {
+    position: fixed;
+    bottom: var(--spacing-lg);
+    left: var(--spacing-lg);
+    right: var(--spacing-lg);
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    z-index: 9999;
+    animation: slideUp 0.3s ease;
+}
+
+.pwa-prompt.hidden {
+    display: none;
+}
+
+.pwa-prompt-content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+}
+
+.pwa-prompt-icon {
+    width: 48px;
+    height: 48px;
+    background-color: var(--accent-primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: var(--font-size-xl);
+    flex-shrink: 0;
+}
+
+.pwa-prompt-text {
+    flex: 1;
+}
+
+.pwa-prompt-text h3 {
+    margin: 0 0 var(--spacing-xs) 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-lg);
+}
+
+.pwa-prompt-text p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.pwa-prompt-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-shrink: 0;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* PWA Fullscreen adjustments */
+@media (display-mode: standalone) {
+    .header {
+        padding-top: env(safe-area-inset-top);
+    }
+
+    .sidebar {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    .content {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
+
 .hidden {
     display: none !important;
 }
 
 .visible {
     display: block !important;
+}
+
+@media (max-width: 480px) {
+    .pwa-prompt-content {
+        flex-direction: column;
+        text-align: center;
+        gap: var(--spacing-md);
+    }
+
+    .pwa-prompt-actions {
+        width: 100%;
+        justify-content: center;
+    }
 }
