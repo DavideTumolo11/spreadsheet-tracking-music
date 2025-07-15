@@ -235,32 +235,31 @@ class AppController {
     }
 
     /**
-     * Setup sidebar responsive per mobile
+     * Setup responsive sidebar per mobile
      */
     setupResponsiveSidebar() {
-        // Toggle sidebar su mobile
-        const header = document.querySelector('.header');
-        if (header && window.innerWidth <= 768) {
-            const toggleBtn = document.createElement('button');
-            toggleBtn.className = 'mobile-nav-toggle';
-            toggleBtn.innerHTML = '<i class="fas fa-bars"></i>';
-            toggleBtn.addEventListener('click', this.toggleMobileSidebar.bind(this));
+        // Setup mobile menu toggle
+        const mobileToggle = document.getElementById('mobileMenuToggle');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
 
-            const logo = document.querySelector('.logo');
-            if (logo) {
-                logo.parentNode.insertBefore(toggleBtn, logo.nextSibling);
-            }
+        if (mobileToggle) {
+            mobileToggle.addEventListener('click', () => {
+                this.toggleMobileSidebar();
+            });
         }
 
-        // Chiudi sidebar quando si clicca fuori (mobile)
-        document.addEventListener('click', (e) => {
-            if (window.innerWidth <= 768) {
-                const sidebar = document.querySelector('.sidebar');
-                const toggleBtn = document.querySelector('.mobile-nav-toggle');
+        // Chiudi sidebar quando si clicca sull'overlay
+        if (overlay) {
+            overlay.addEventListener('click', () => {
+                this.closeMobileSidebar();
+            });
+        }
 
-                if (sidebar && !sidebar.contains(e.target) && !toggleBtn?.contains(e.target)) {
-                    sidebar.classList.remove('active');
-                }
+        // Chiudi sidebar quando si seleziona una voce di menu (mobile)
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth <= 768 && e.target.closest('.nav-item')) {
+                setTimeout(() => this.closeMobileSidebar(), 200);
             }
         });
     }
@@ -269,10 +268,40 @@ class AppController {
      * Toggle sidebar mobile
      */
     toggleMobileSidebar() {
-        const sidebar = document.querySelector('.sidebar');
-        if (sidebar) {
-            sidebar.classList.toggle('active');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+
+        if (sidebar && overlay) {
+            const isOpen = sidebar.classList.contains('mobile-open');
+
+            if (isOpen) {
+                this.closeMobileSidebar();
+            } else {
+                this.openMobileSidebar();
+            }
         }
+    }
+
+    /**
+     * Apri sidebar mobile
+     */
+    openMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+
+        if (sidebar) sidebar.classList.add('mobile-open');
+        if (overlay) overlay.classList.add('active');
+    }
+
+    /**
+     * Chiudi sidebar mobile
+     */
+    closeMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobileOverlay');
+
+        if (sidebar) sidebar.classList.remove('mobile-open');
+        if (overlay) overlay.classList.remove('active');
     }
 
     /**
@@ -412,10 +441,7 @@ class AppController {
 
                 // Chiudi sidebar mobile se aperta
                 if (window.innerWidth <= 768) {
-                    const sidebar = document.querySelector('.sidebar');
-                    if (sidebar) {
-                        sidebar.classList.remove('active');
-                    }
+                    this.closeMobileSidebar();
                 }
 
                 console.log(`Navigazione verso: ${sectionName}`);
@@ -566,10 +592,9 @@ class AppController {
      * Gestisce resize finestra
      */
     handleWindowResize() {
-        // Aggiorna layout responsive se necessario
-        const sidebar = document.querySelector('.sidebar');
-        if (sidebar && window.innerWidth > 768) {
-            sidebar.classList.remove('active');
+        // Chiudi sidebar mobile se si passa a desktop
+        if (window.innerWidth > 768) {
+            this.closeMobileSidebar();
         }
 
         // Re-render charts se necessario

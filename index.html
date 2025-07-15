@@ -40,9 +40,14 @@
     <!-- 🎵 HEADER -->
     <header class="header">
         <div class="header-content">
-            <div class="logo">
-                <i class="fas fa-music"></i>
-                <span>Music Business Tracker</span>
+            <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+                <button class="mobile-menu-toggle" id="mobileMenuToggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <div class="logo">
+                    <i class="fas fa-music"></i>
+                    <span>Music Business Tracker</span>
+                </div>
             </div>
             <div class="header-info">
                 <span class="date" id="currentDate"></span>
@@ -53,8 +58,11 @@
 
     <!-- 📱 MAIN CONTAINER -->
     <div class="container">
+        <!-- Mobile Overlay -->
+        <div class="mobile-overlay" id="mobileOverlay"></div>
+
         <!-- 📋 SIDEBAR NAVIGATION -->
-        <nav class="sidebar">
+        <nav class="sidebar" id="sidebar">
             <ul class="nav-menu">
                 <li class="nav-item active" data-section="dashboard">
                     <i class="fas fa-chart-line"></i>
