@@ -410,6 +410,7 @@ const ExportUtils = {
         document.body.removeChild(link);
 
         URL.revokeObjectURL(url);
+
         if (typeof NotificationUtils !== 'undefined') {
             NotificationUtils.success(`File ${filename} scaricato con successo`);
         }
